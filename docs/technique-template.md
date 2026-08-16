@@ -1,5 +1,10 @@
 # Technique name
 
+## Status
+
+Choose one: experimental, reference, or integration-ready. Explain what remains
+before the next status is justified.
+
 ## Summary
 
 Explain the technique and the specific latency problem in a few sentences.
@@ -31,6 +36,11 @@ compiler and hardware are expected to do.
 ## API and example
 
 Show the smallest useful example, including required setup and cleanup.
+
+## Integration
+
+Document the CMake target, public headers, dependencies, required compiler
+definitions, and the smallest commands needed to build and test the module.
 
 ## Trade-offs
 

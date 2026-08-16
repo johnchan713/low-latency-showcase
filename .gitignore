@@ -15,3 +15,5 @@ compile_commands.json
 *.gcno
 *.profraw
 *.profdata
+
+/low-latency-showcase-framework.zip

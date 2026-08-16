@@ -1,2 +1,3 @@
-# Register shared benchmark harness targets explicitly in this file.
-# Technique-specific benchmarks stay with their owning snippet or component.
+# Cross-module benchmark scenarios are registered below. Shared measurement
+# infrastructure belongs in support/benchmarking instead.
+add_subdirectory(scenarios)

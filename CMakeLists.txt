@@ -20,6 +20,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(ProjectOptions)
 include(CTest)
 
+option(LLS_BUILD_EXAMPLES "Build example executables" ON)
+option(LLS_BUILD_BENCHMARKS "Build benchmark executables" OFF)
+
 add_library(lls_headers INTERFACE)
 add_library(lls::headers ALIAS lls_headers)
 
@@ -31,25 +34,16 @@ target_include_directories(
 )
 target_compile_features(lls_headers INTERFACE cxx_std_23)
 
-add_executable(lls_showcase src/main.cpp)
-target_link_libraries(lls_showcase PRIVATE lls::headers)
-target_compile_definitions(
-    lls_showcase
-    PRIVATE LLS_PROJECT_VERSION="${PROJECT_VERSION}"
-)
-lls_apply_project_options(lls_showcase)
+# Every directory below is an explicit registry. New code is never discovered
+# through source globbing, so review and CI scope remain visible.
+add_subdirectory(support)
+add_subdirectory(modules)
+add_subdirectory(apps)
 
-if(BUILD_TESTING)
-    add_executable(lls_compiler_info_test tests/compiler_info_test.cpp)
-    target_link_libraries(lls_compiler_info_test PRIVATE lls::headers)
-    lls_apply_project_options(lls_compiler_info_test)
-
-    add_test(NAME lls.smoke COMMAND lls_showcase --self-test)
-    add_test(NAME lls.compiler_info COMMAND lls_compiler_info_test)
-    set_tests_properties(lls.smoke lls.compiler_info PROPERTIES LABELS "unit")
+if(LLS_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()
 
-# Keep future code visible to configuration and CI through explicit registries.
-add_subdirectory(components)
-add_subdirectory(snippets)
-add_subdirectory(benchmarks)
+if(LLS_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()

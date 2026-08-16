@@ -13,7 +13,9 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "BUILD_TESTING": "ON"
+        "BUILD_TESTING": "ON",
+        "LLS_BUILD_EXAMPLES": "ON",
+        "LLS_BUILD_BENCHMARKS": "OFF"
       }
     },
     {
@@ -60,7 +62,8 @@
       "inherits": "release",
       "cacheVariables": {
         "LLS_ENABLE_LTO": "ON",
-        "LLS_NATIVE_ARCH": "ON"
+        "LLS_NATIVE_ARCH": "ON",
+        "LLS_BUILD_BENCHMARKS": "ON"
       }
     }
   ],
