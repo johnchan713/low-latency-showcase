@@ -92,6 +92,9 @@
       "configurePreset": "dev",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     },
     {
@@ -99,6 +102,9 @@
       "configurePreset": "release",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     },
     {
@@ -106,6 +112,9 @@
       "configurePreset": "asan-ubsan",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     },
     {
@@ -113,6 +122,9 @@
       "configurePreset": "tsan",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     },
     {
@@ -120,6 +132,9 @@
       "configurePreset": "benchmark-native",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     }
   ]

@@ -6,7 +6,7 @@ comparable.
 
 | Technique | Best suited to | Avoid when | Portability | Main cost | Evidence |
 |---|---|---|---|---|---|
-| C++23 target baseline | Modern compiler toolchains | Supporting older compilers is mandatory | Portable | Toolchain requirement | Project smoke tests |
+| C++23 target baseline | Linux with GCC or Clang | Windows/MSVC or older compilers are required | Linux; x86-64 tested | Toolchain requirement | Project smoke tests |
 
 Each future row must link to a capsule containing correctness tests, benchmark
 context, and limitations.

@@ -7,6 +7,14 @@ project(
     LANGUAGES CXX
 )
 
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "Low Latency Showcase currently supports Linux only")
+endif()
+
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
+    message(FATAL_ERROR "Low Latency Showcase currently supports GCC and Clang only")
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(ProjectOptions)
@@ -40,3 +48,8 @@ if(BUILD_TESTING)
     add_test(NAME lls.compiler_info COMMAND lls_compiler_info_test)
     set_tests_properties(lls.smoke lls.compiler_info PROPERTIES LABELS "unit")
 endif()
+
+# Keep future code visible to configuration and CI through explicit registries.
+add_subdirectory(components)
+add_subdirectory(snippets)
+add_subdirectory(benchmarks)

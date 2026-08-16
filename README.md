@@ -12,7 +12,7 @@ explicit **use when / avoid when** explanation.
 
 The repository is at its foundation stage. It provides:
 
-- a portable C++23 entry executable;
+- a C++23 entry executable for the currently supported Linux toolchains;
 - target-scoped CMake configuration;
 - Ninja-based development, release, sanitizer, and native benchmark presets;
 - GCC and Clang continuous-integration builds;
@@ -27,8 +27,10 @@ project can measure them honestly.
 
 - CMake 3.28 or newer
 - Ninja
-- GCC or Clang with C++23 support
-- Linux for the helper scripts; the portable C++ targets are not Linux-only
+- Linux with GCC or Clang and C++23 support
+
+The tested platform is Linux x86-64. Other architectures are currently
+untested. Windows and MSVC are intentionally unsupported at this stage.
 
 ## Build and test
 
@@ -75,7 +77,8 @@ distribute its binaries as portable release artifacts.
 
 A snippet should remain self-contained. Reusable code is promoted to a
 component only after it has a stable interface, correctness tests, benchmarks,
-and documented limitations.
+and documented limitations. Every new capsule must also be registered in its
+directory's `CMakeLists.txt`; unregistered code is not accepted.
 
 ## Project rules
 

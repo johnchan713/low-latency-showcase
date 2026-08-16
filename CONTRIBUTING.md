@@ -25,13 +25,18 @@ Place a focused demonstration under `snippets/<category>/<technique>/` with:
 - `test.cpp` checking correctness; and
 - `CMakeLists.txt` defining independent targets.
 
+Register every capsule explicitly in `snippets/CMakeLists.txt`. Register every
+reusable component in `components/CMakeLists.txt`. Do not use automatic source
+globbing: a visible list makes build and review scope deterministic.
+
 Do not make a snippet depend on another snippet. Shared code belongs in a
 component only after its interface and ownership are clear.
 
 ## Code expectations
 
-- Use portable C++23 unless a documented compiler, operating-system, or
-  architecture feature is central to the technique.
+- Target Linux with GCC or Clang. Windows and MSVC are not currently supported.
+- Use portable C++23 within that platform scope unless a documented compiler,
+  operating-system, or architecture feature is central to the technique.
 - Keep compiler options target-scoped.
 - Avoid hidden global state and undocumented allocation.
 - State thread-safety and memory-ordering guarantees.

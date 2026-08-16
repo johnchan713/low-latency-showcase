@@ -9,10 +9,6 @@ function(lls_enable_sanitizers target_name)
         return()
     endif()
 
-    if(MSVC)
-        message(FATAL_ERROR "The selected sanitizer preset is not configured for MSVC")
-    endif()
-
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         message(FATAL_ERROR "Sanitizers require a supported Clang or GCC toolchain")
     endif()
@@ -36,4 +32,8 @@ function(lls_enable_sanitizers target_name)
             -fno-omit-frame-pointer
     )
     target_link_options(${target_name} PRIVATE "-fsanitize=${sanitizer_list}")
+
+    if(LLS_ENABLE_UBSAN)
+        target_compile_options(${target_name} PRIVATE -fno-sanitize-recover=undefined)
+    endif()
 endfunction()

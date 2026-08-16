@@ -30,6 +30,14 @@ jobs:
           - toolchain: Clang
             cc: clang
             cxx: clang++
+          - toolchain: GCC
+            preset: tsan
+            cc: gcc
+            cxx: g++
+          - toolchain: GCC
+            preset: benchmark-native
+            cc: gcc
+            cxx: g++
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}

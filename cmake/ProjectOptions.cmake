@@ -18,25 +18,18 @@ function(lls_apply_project_options target_name)
             CXX_EXTENSIONS OFF
     )
 
-    if(MSVC)
-        target_compile_options(${target_name} PRIVATE /W4 /permissive-)
-        if(LLS_WARNINGS_AS_ERRORS)
-            target_compile_options(${target_name} PRIVATE /WX)
-        endif()
-    else()
-        target_compile_options(
-            ${target_name}
-            PRIVATE
-                -Wall
-                -Wextra
-                -Wpedantic
-                -Wconversion
-                -Wsign-conversion
-                -Wshadow
-        )
-        if(LLS_WARNINGS_AS_ERRORS)
-            target_compile_options(${target_name} PRIVATE -Werror)
-        endif()
+    target_compile_options(
+        ${target_name}
+        PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+            -Wconversion
+            -Wsign-conversion
+            -Wshadow
+    )
+    if(LLS_WARNINGS_AS_ERRORS)
+        target_compile_options(${target_name} PRIVATE -Werror)
     endif()
 
     lls_enable_sanitizers(${target_name})

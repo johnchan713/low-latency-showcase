@@ -9,10 +9,17 @@ print_section() {
 
 run_if_available() {
     local executable=$1
+    local command_status
     shift
 
     if command -v "$executable" >/dev/null 2>&1; then
-        "$executable" "$@"
+        if "$executable" "$@"; then
+            return 0
+        else
+            command_status=$?
+            printf '%s exited with status %s; collection continues\n' \
+                "$executable" "$command_status" >&2
+        fi
     else
         printf '%s is not available\n' "$executable"
     fi
@@ -45,7 +52,9 @@ run_if_available ninja --version
 print_section "Power governor"
 governor_files=(/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor)
 if [[ -e "${governor_files[0]}" ]]; then
-    sort -u "${governor_files[@]}"
+    if ! sort -u "${governor_files[@]}"; then
+        printf 'Could not read all CPU governor information\n' >&2
+    fi
 else
     printf 'CPU governor information is not exposed\n'
 fi

@@ -31,8 +31,6 @@ namespace lls {
     return "Clang " __clang_version__;
 #elif defined(__GNUC__)
     return "GCC " __VERSION__;
-#elif defined(_MSC_VER)
-    return "Microsoft Visual C++";
 #else
     return "unknown compiler";
 #endif
