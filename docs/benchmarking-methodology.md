@@ -33,6 +33,10 @@ At minimum, record:
 Run `tools/collect-system-info.sh` to capture a starting snapshot. Review its
 output before publishing because machines may expose environment-specific data.
 
+Shared measurement mechanics belong in `support/benchmarking/`. A benchmark
+for one module remains in that module's `benchmarks/` directory; an end-to-end
+measurement involving several modules belongs in `benchmarks/scenarios/`.
+
 ## 4. Control execution
 
 - Use a release or native benchmark build, never a sanitizer build.

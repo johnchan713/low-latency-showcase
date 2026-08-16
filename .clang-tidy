@@ -11,5 +11,5 @@ Checks: >
   readability-misleading-indentation,
   readability-redundant-string-cstr
 WarningsAsErrors: ''
-HeaderFilterRegex: '^(include|src|snippets|components|tests)/'
+HeaderFilterRegex: '(^|.*/)(apps|benchmarks|examples|include|modules|support)/'
 FormatStyle: file

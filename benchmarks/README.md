@@ -1,13 +1,11 @@
-# Benchmarks
+# Benchmark scenarios
 
-This directory will hold shared measurement infrastructure only when the first
-real benchmark needs it. Individual technique benchmarks stay beside their
-snippet or component so that code, context, and results remain discoverable.
+This directory contains end-to-end measurements that combine multiple modules.
+Benchmarks for one module remain inside that module's `benchmarks/` directory,
+while shared measurement mechanics belong in `support/benchmarking/`.
 
-Read `docs/benchmarking-methodology.md` before adding a harness or publishing a
-number. Shared GitHub-hosted runners are suitable for compilation smoke tests,
-not for enforcing latency thresholds.
+Read `docs/benchmarking-methodology.md` before publishing a number. Shared
+GitHub-hosted runners are suitable for compilation smoke tests, not for
+enforcing latency thresholds.
 
-Register future shared harness targets explicitly in `benchmarks/CMakeLists.txt`.
-Technique-specific benchmark targets remain registered with their owning
-snippet or component.
+Register cross-module scenarios explicitly in `benchmarks/scenarios/`.

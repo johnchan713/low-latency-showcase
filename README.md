@@ -16,7 +16,9 @@ The repository is at its foundation stage. It provides:
 - target-scoped CMake configuration;
 - Ninja-based development, release, sanitizer, and native benchmark presets;
 - GCC and Clang continuous-integration builds;
-- documentation standards for future snippets and reusable components; and
+- a capsule-first hierarchy for future reusable modules and integrations;
+- dedicated locations for future test support, benchmark support, and
+  benchmark scenarios; and
 - scripts for recording system information and pinning a process to CPUs.
 
 The first technical topic will be measurement correctness. More interesting
@@ -65,20 +67,29 @@ distribute its binaries as portable release artifacts.
 
 | Path | Responsibility |
 |---|---|
-| `src/main.cpp` | Small project entry and build diagnostic |
-| `include/lls/` | Shared public headers only |
-| `snippets/` | Focused, independently documented demonstrations |
-| `components/` | Reusable code promoted beyond demonstration status |
-| `benchmarks/` | Shared measurement rules and future harness support |
+| `apps/lls-info/` | Small project entry, compiler diagnostic, and its tests |
+| `include/lls/` | Narrow repository-wide foundation headers only |
+| `modules/` | Self-contained, independently reusable capability capsules |
+| `examples/` | Runnable integrations combining multiple modules |
+| `support/testing/` | Shared test-only infrastructure |
+| `support/benchmarking/` | Shared benchmark mechanics, never production code |
+| `benchmarks/scenarios/` | Cross-module and end-to-end measurements |
 | `docs/` | Methodology, glossary, templates, and decision guidance |
 | `cmake/` | Target-scoped warnings, sanitizers, and build options |
 | `tools/` | Linux environment and CPU-affinity helpers |
-| `tests/` | Project-level smoke and integration checks |
 
-A snippet should remain self-contained. Reusable code is promoted to a
-component only after it has a stable interface, correctness tests, benchmarks,
-and documented limitations. Every new capsule must also be registered in its
-directory's `CMakeLists.txt`; unregistered code is not accepted.
+A module folder represents a capability that another programmer may reasonably
+integrate, not every private helper class. Each module owns its README, CMake
+target, public headers, optional implementation, examples, correctness tests,
+and benchmarks. Unneeded directories are omitted.
+
+The root `include/lls/` directory is deliberately narrow. It currently exposes
+compiler and language-mode metadata for applications and future benchmark
+result reporting. Other reusable capabilities and their public headers belong
+inside their module capsules.
+
+Every module is registered explicitly in `modules/CMakeLists.txt`. Source
+globbing is not accepted because new code must be visible in review and CI.
 
 ## Project rules
 
