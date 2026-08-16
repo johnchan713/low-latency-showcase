@@ -1,0 +1,9 @@
+# Snippets
+
+Snippets are small, independent demonstrations organized as
+`snippets/<category>/<technique>/`. Each capsule owns its documentation,
+example, correctness test, benchmark, and CMake targets.
+
+Examples must not depend on other snippets. If implementation is genuinely
+reusable, promote it into `components/` after its interface and guarantees have
+stabilized.

@@ -1,0 +1,15 @@
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+  modernize-use-nullptr,
+  modernize-use-override,
+  readability-const-return-type,
+  readability-container-size-empty,
+  readability-duplicate-include,
+  readability-misleading-indentation,
+  readability-redundant-string-cstr
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(include|src|snippets|components|tests)/'
+FormatStyle: file

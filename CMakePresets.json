@@ -1,0 +1,126 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "Development",
+      "description": "Debug build with strict warnings",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "LLS_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Portable release",
+      "description": "Optimized build without host-specific instructions",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "LLS_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "asan-ubsan",
+      "displayName": "Address and undefined-behaviour sanitizers",
+      "inherits": "dev",
+      "cacheVariables": {
+        "LLS_ENABLE_ASAN": "ON",
+        "LLS_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "Thread sanitizer",
+      "inherits": "dev",
+      "cacheVariables": {
+        "LLS_ENABLE_TSAN": "ON"
+      }
+    },
+    {
+      "name": "benchmark-native",
+      "displayName": "Native benchmark",
+      "description": "Host-tuned release build with interprocedural optimization",
+      "inherits": "release",
+      "cacheVariables": {
+        "LLS_ENABLE_LTO": "ON",
+        "LLS_NATIVE_ARCH": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan-ubsan",
+      "configurePreset": "asan-ubsan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "benchmark-native",
+      "configurePreset": "benchmark-native"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan-ubsan",
+      "configurePreset": "asan-ubsan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "benchmark-native",
+      "configurePreset": "benchmark-native",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

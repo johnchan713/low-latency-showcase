@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.toolchain }} / ${{ matrix.preset }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain:
+          - GCC
+          - Clang
+        preset:
+          - dev
+          - release
+        include:
+          - toolchain: GCC
+            cc: gcc
+            cxx: g++
+          - toolchain: Clang
+            cc: clang
+            cxx: clang++
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install --yes ninja-build
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+  sanitizers:
+    name: GCC / ASan + UBSan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install --yes ninja-build
+
+      - name: Configure
+        run: cmake --preset asan-ubsan
+
+      - name: Build
+        run: cmake --build --preset asan-ubsan
+
+      - name: Test
+        run: ctest --preset asan-ubsan
