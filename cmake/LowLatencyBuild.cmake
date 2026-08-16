@@ -1,0 +1,16 @@
+include_guard(GLOBAL)
+
+function(lls_enable_low_latency_build target_name)
+    if(LLS_NATIVE_ARCH)
+        target_compile_options(${target_name} PRIVATE -march=native -mtune=native)
+    endif()
+
+    if(LLS_ENABLE_LTO)
+        include(CheckIPOSupported)
+        check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error LANGUAGES CXX)
+        if(NOT ipo_supported)
+            message(FATAL_ERROR "Interprocedural optimization is unavailable: ${ipo_error}")
+        endif()
+        set_property(TARGET ${target_name} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
+endfunction()

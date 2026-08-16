@@ -1,0 +1,17 @@
+/build/
+/cmake-build-*/
+/out/
+
+CMakeUserPresets.json
+compile_commands.json
+
+.cache/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+*.gcda
+*.gcno
+*.profraw
+*.profdata
