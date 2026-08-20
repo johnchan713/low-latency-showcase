@@ -150,6 +150,7 @@ globbing is not accepted because new code must be visible in review and CI.
 7. Prefer understandable code until measurement proves that complexity pays.
 
 Read the [benchmarking methodology](docs/benchmarking-methodology.md),
+[Disruptor optimization tournament](docs/disruptor-optimization-tournament.md),
 [glossary](docs/glossary.md), and [contribution guide](CONTRIBUTING.md) before
 adding a technique.
 
