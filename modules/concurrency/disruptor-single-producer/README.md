@@ -25,6 +25,9 @@ or the event stream must survive a process restart.
 `single_producer_disruptor<Event, Capacity, ConsumerCount>` constructs every
 event once. `Capacity` is a power of two, enabling `sequence & (Capacity - 1)`
 instead of division when a sequence maps to a ring slot.
+The ring storage begins on a 64-byte cache-line boundary, preventing a
+cache-line-sized event from straddling two lines because of ordinary heap
+alignment.
 
 - One thread owns all publication calls.
 - One thread owns each consumer index.

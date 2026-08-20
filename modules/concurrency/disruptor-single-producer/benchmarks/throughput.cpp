@@ -24,6 +24,13 @@ struct event final {
     std::uint64_t value{};
 };
 
+struct event_64 final {
+    std::uint64_t value{};
+    std::array<std::byte, 56> payload{};
+};
+
+static_assert(sizeof(event_64) == 64);
+
 struct measurement final {
     std::string_view name;
     double events_per_second{};
@@ -67,16 +74,19 @@ template <typename Producer, typename Consumer>
     return {name, static_cast<double>(event_count) / elapsed.count(), checksum};
 }
 
-template <std::size_t BatchSize>
+template <std::size_t BatchSize, typename Event = event>
 [[nodiscard]] measurement benchmark_disruptor() {
     using stream_type = lls::concurrency::single_producer_disruptor<
-        event,
+        Event,
         capacity,
         1>;
     stream_type stream;
 
     return run_pair(
-        BatchSize == 1 ? "disruptor batch=1" : "disruptor batch=16",
+        sizeof(Event) == 64
+            ? "disruptor 64-byte batch=1"
+            : (BatchSize == 1 ? "disruptor batch=1"
+                              : "disruptor batch=16"),
         [&] {
             std::uint64_t published = 0;
             while (published < event_count) {
@@ -85,7 +95,7 @@ template <std::size_t BatchSize>
                     remaining < BatchSize ? remaining : BatchSize);
                 if (stream.try_publish_batch(
                         count,
-                        [published](event& output,
+                        [published](Event& output,
                                     std::size_t index) noexcept {
                             output.value = published + index;
                         })) {
@@ -99,7 +109,7 @@ template <std::size_t BatchSize>
                 consumed += stream.consume_available(
                     0,
                     BatchSize,
-                    [&checksum](const event& input,
+                    [&checksum](const Event& input,
                                 std::int64_t) noexcept {
                         checksum += input.value;
                     });
@@ -231,12 +241,11 @@ private:
             }
             std::uint64_t consumed = 0;
             while (consumed < event_count) {
-                consumed += stream.consume_available(
-                    index,
-                    16,
+                const auto handler =
                     [&, index](const event& input, std::int64_t) noexcept {
-                        checksums[index] += input.value;
-                    });
+                    checksums[index] += input.value;
+                };
+                consumed += stream.consume_available(index, 16, handler);
             }
         });
     }
@@ -309,7 +318,7 @@ private:
 }
 
 void print(const measurement& result) {
-    std::cout << std::left << std::setw(25) << result.name << std::right
+    std::cout << std::left << std::setw(31) << result.name << std::right
               << std::fixed << std::setprecision(2)
               << result.events_per_second / 1'000'000.0 << " M events/s\n";
 }
@@ -323,18 +332,26 @@ int main() {
     const auto spsc = benchmark_spsc_ring();
     const auto batch_one = benchmark_disruptor<1>();
     const auto batch_sixteen = benchmark_disruptor<16>();
+    const auto payload_64 = benchmark_disruptor<1, event_64>();
     const auto three_queues = benchmark_three_spsc_rings();
     const auto multicast = benchmark_multicast_disruptor();
 
     for (const auto& result :
-         {mutex, spsc, batch_one, batch_sixteen, three_queues, multicast}) {
+         {mutex,
+          spsc,
+          batch_one,
+          batch_sixteen,
+          payload_64,
+          three_queues,
+          multicast}) {
         print(result);
     }
 
     const auto checksum = expected_checksum();
     const bool correct =
         mutex.checksum == checksum && spsc.checksum == checksum &&
-        batch_one.checksum == checksum && batch_sixteen.checksum == checksum &&
+        batch_one.checksum == checksum &&
+        batch_sixteen.checksum == checksum && payload_64.checksum == checksum &&
         three_queues.checksum == checksum * 3 &&
         multicast.checksum == checksum * 3;
     const bool mutex_target =

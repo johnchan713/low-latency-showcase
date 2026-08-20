@@ -53,7 +53,7 @@ public:
     static constexpr std::size_t consumer_count = ConsumerCount;
 
     single_producer_disruptor()
-        : events_{std::make_unique<Event[]>(Capacity)} {}
+        : storage_{std::make_unique<ring_storage>()} {}
 
     single_producer_disruptor(const single_producer_disruptor&) = delete;
     single_producer_disruptor& operator=(const single_producer_disruptor&) =
@@ -61,8 +61,6 @@ public:
     single_producer_disruptor(single_producer_disruptor&&) = delete;
     single_producer_disruptor& operator=(single_producer_disruptor&&) = delete;
 
-    /// Mutates and publishes one preconstructed event, or returns false when
-    /// the slowest consumer still owns the next ring slot.
     template <typename Writer>
         requires std::is_nothrow_invocable_v<Writer&, Event&>
     [[nodiscard]] bool try_publish(Writer&& writer) noexcept {
@@ -171,7 +169,7 @@ public:
 private:
     [[nodiscard]] Event& event_at(sequence_type sequence) noexcept {
         const auto index = static_cast<std::size_t>(sequence) & (Capacity - 1);
-        return events_[index];
+        return storage_->events[index];
     }
 
     [[nodiscard]] sequence_type slowest_consumer_sequence() const noexcept {
@@ -186,7 +184,13 @@ private:
         return slowest;
     }
 
-    std::unique_ptr<Event[]> events_;
+    struct alignas(detail::cache_line_size) ring_storage final {
+        std::array<Event, Capacity> events{};
+    };
+
+    static_assert(alignof(ring_storage) >= detail::cache_line_size);
+
+    std::unique_ptr<ring_storage> storage_;
     alignas(detail::cache_line_size) sequence_type next_to_publish_{0};
     sequence_type cached_slowest_consumer_{-1};
     detail::padded_sequence published_{};

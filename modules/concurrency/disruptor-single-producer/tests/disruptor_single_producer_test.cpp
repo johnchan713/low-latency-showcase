@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <new>
 #include <thread>
 #include <vector>
@@ -31,6 +32,12 @@ struct counted_event final {
     inline static std::atomic<std::size_t> constructions{0};
     inline static std::atomic<std::size_t> allocations{0};
 };
+
+struct cache_line_event final {
+    std::array<std::byte, 64> payload{};
+};
+
+static_assert(sizeof(cache_line_event) == 64);
 
 using small_disruptor =
     lls::concurrency::single_producer_disruptor<event, 4, 2>;
@@ -176,6 +183,32 @@ using small_disruptor =
            counted_event::constructions.load(std::memory_order_relaxed) == 16;
 }
 
+[[nodiscard]] bool cache_line_storage_alignment_test() {
+    using stream_type = lls::concurrency::single_producer_disruptor<
+        cache_line_event,
+        8,
+        1>;
+    stream_type disruptor;
+    for (std::size_t index = 0; index < 8; ++index) {
+        bool aligned = false;
+        if (!disruptor.try_publish(
+                [&aligned](cache_line_event& output) noexcept {
+                    const auto address = reinterpret_cast<std::uintptr_t>(
+                        std::addressof(output));
+                    aligned = address % 64 == 0;
+                }) ||
+            !aligned) {
+            return false;
+        }
+        if (!disruptor.try_consume(
+                0,
+                [](const cache_line_event&) noexcept {})) {
+            return false;
+        }
+    }
+    return true;
+}
+
 [[nodiscard]] bool concurrent_multicast_test() {
     constexpr std::uint64_t event_count = 500'000;
     constexpr std::size_t consumer_count = 3;
@@ -255,6 +288,7 @@ int main() {
         {"wrap and slowest consumer", wrap_and_slowest_consumer_test},
         {"batch wrap", batch_wrap_test},
         {"preallocation", preallocation_test},
+        {"cache-line storage alignment", cache_line_storage_alignment_test},
         {"concurrent multicast", concurrent_multicast_test},
     };
 
