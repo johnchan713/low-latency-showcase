@@ -2,6 +2,30 @@
 
 Measured and documented C++ building blocks for latency-sensitive systems.
 
+## C++ versus Java LMAX Disruptor 4
+
+On the same AMD EPYC development VM, the C++ single-producer implementation
+was compared directly with the official
+[Java LMAX Disruptor 4.0.0](https://github.com/LMAX-Exchange/disruptor). Both sides
+used one producer, one consumer, a 65,536-slot ring, identical batch sizes,
+20,000,000 sequence-validated events per throughput run, and five-run medians.
+
+| Same-machine workload | This C++ implementation | Java LMAX Disruptor 4 | C++ difference |
+|---|---:|---:|---:|
+| Batch 1 throughput | 90M events/s | **109M events/s** | 17% lower |
+| Batch 16 throughput | 390M events/s | **502M events/s** | 22% lower |
+| Batch 64 throughput | **945M events/s** | 773M events/s | **22% higher** |
+| Batch 1 handoff p50 | **80 ns** | 91 ns | **12% lower** |
+| Batch 1 handoff p99 | **110 ns** | 131 ns | **16% lower** |
+
+These figures show the implementations in the same performance class: Java
+led small-batch throughput in this paired pass, while C++ led batch-64
+throughput and handoff latency. They do not establish a universal language
+ranking. Confirmation passes suffered substantial shared-VM interference, and
+Java worker threads were restricted to the same two-CPU set but could not be
+individually pinned through the container's PID namespace. Treat the table as
+a same-machine indication, not a bare-metal performance record.
+
 The project does not claim that a technique is universally fastest. Hardware,
 contention, workload shape, operating-system behaviour, compiler output, and
 acceptable trade-offs determine whether an optimization helps. Each accepted
