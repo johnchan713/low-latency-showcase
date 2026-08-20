@@ -61,3 +61,48 @@ target_link_libraries(my_target PRIVATE lls::disruptor_single_producer)
 See `examples/basic.cpp` for thread ownership and backpressure handling. Build
 benchmarks with the `benchmark-native` preset; results are environment-sensitive
 and are intentionally not latency-threshold CTest tests.
+
+## Benchmarks
+
+Build and run the two native benchmark executables:
+
+```sh
+cmake --preset benchmark-native
+cmake --build --preset benchmark-native
+./build/benchmark-native/benchmarks/lls_disruptor_single_producer_benchmark
+./build/benchmark-native/benchmarks/lls_disruptor_single_producer_latency_benchmark
+```
+
+The throughput benchmark transfers 5,000,000 events through a 65,536-slot ring.
+It compares batch sizes 1 and 16, 8-byte and 64-byte events, a mutex-protected
+ring, a specialized SPSC ring, and three independent SPSC queues. The multicast
+case sends every source event to three consumers.
+
+Representative observations from the development AMD EPYC virtual machine,
+using GCC 13, `-O3`, LTO, native architecture tuning, and pinned threads:
+
+| Workload | Observed result |
+|---|---:|
+| 8-byte event, batch 1 | typically 120–140 million events/s |
+| 8-byte event, batch 16 | typically 350–470 million events/s |
+| 64-byte event, batch 1 | typically 85–140 million events/s |
+| Source event multicast to 3 consumers | roughly 65–195 million events/s |
+| Busy-spin handoff latency p50 | typically 60–100 ns |
+| Busy-spin handoff latency p99 | typically 80–160 ns |
+| Blocking single-slot latency p50 | roughly 17–27 us |
+
+The cache-line-aligned ring changed the collected 64-byte-event median from
+about 83 million to 96 million events/s, approximately a 15% improvement on
+this host. It does not enlarge an 8-byte event to 64 bytes; it aligns the start
+of the ring so a cache-line-sized event does not unnecessarily span two lines.
+
+Throughput is not individual-event latency. For example, 135 million events/s
+means an average pipeline completion interval of about 7.4 ns, while an event's
+complete producer-to-consumer handoff still takes tens or hundreds of
+nanoseconds. Batching increases throughput by sharing publication overhead, but
+can increase latency if a producer waits to assemble a batch.
+
+These figures are observations, not portable guarantees. Shared virtual-machine
+scheduling produced occasional throughput drops and 250–470 ns latency tails.
+Repeat runs, retain the distribution, record the system configuration, and use
+the repository's benchmarking methodology before making performance claims.
