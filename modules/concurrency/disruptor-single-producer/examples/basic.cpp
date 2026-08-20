@@ -25,15 +25,15 @@ int main() {
     std::atomic<bool> start{false};
 
     std::thread risk([&] {
+        auto consumer = stream.make_consumer<0>();
         while (!start.load(std::memory_order_acquire)) {
             std::this_thread::yield();
         }
         std::uint64_t consumed = 0;
         while (consumed < event_count) {
-            consumed += stream.consume_available(
-                0,
+            consumed += consumer.consume_available(
                 64,
-                [](const market_event& event, std::int64_t) noexcept {
+                [](const market_event& event, std::uint64_t) noexcept {
                     // A real risk handler would update preallocated state here.
                     (void)event;
                 });
@@ -41,15 +41,15 @@ int main() {
     });
 
     std::thread journal([&] {
+        auto consumer = stream.make_consumer<1>();
         while (!start.load(std::memory_order_acquire)) {
             std::this_thread::yield();
         }
         std::uint64_t consumed = 0;
         while (consumed < event_count) {
-            consumed += stream.consume_available(
-                1,
+            consumed += consumer.consume_available(
                 64,
-                [](const market_event& event, std::int64_t) noexcept {
+                [](const market_event& event, std::uint64_t) noexcept {
                     // A real journal would append to a separately managed sink.
                     (void)event;
                 });

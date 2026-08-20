@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -26,7 +27,7 @@ struct event final {
 
 struct event_64 final {
     std::uint64_t value{};
-    std::array<std::byte, 56> payload{};
+    std::array<std::uint64_t, 7> payload{};
 };
 
 static_assert(sizeof(event_64) == 64);
@@ -41,11 +42,35 @@ struct measurement final {
     return (event_count - 1) * event_count / 2;
 }
 
+template <typename Event>
+void write_event(Event& output, std::uint64_t value) noexcept {
+    output.value = value;
+    if constexpr (requires { output.payload; }) {
+        output.payload.fill(value);
+    }
+}
+
+template <typename Event>
+[[nodiscard]] std::uint64_t event_checksum(const Event& input) noexcept {
+    auto checksum = input.value;
+    if constexpr (requires { input.payload; }) {
+        for (const auto value : input.payload) {
+            checksum += value;
+        }
+    }
+    return checksum;
+}
+
 void pin_to_cpu(std::size_t cpu_index) noexcept {
     cpu_set_t set;
     CPU_ZERO(&set);
     CPU_SET(cpu_index, &set);
-    (void)pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+    const auto result = pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+    if (result != 0) {
+        std::cerr << "failed to pin benchmark thread to CPU " << cpu_index
+                  << " (error " << result << ")\n";
+        std::abort();
+    }
 }
 
 template <typename Producer, typename Consumer>
@@ -53,10 +78,12 @@ template <typename Producer, typename Consumer>
                                    Producer&& producer,
                                    Consumer&& consumer) {
     std::atomic<bool> start{false};
+    std::atomic<bool> ready{false};
     std::uint64_t checksum = 0;
 
     std::thread consumer_thread([&] {
         pin_to_cpu(1);
+        ready.store(true, std::memory_order_release);
         while (!start.load(std::memory_order_acquire)) {
             std::this_thread::yield();
         }
@@ -64,6 +91,8 @@ template <typename Producer, typename Consumer>
     });
 
     pin_to_cpu(0);
+    while (!ready.load(std::memory_order_acquire)) {
+    }
     const auto begin = std::chrono::steady_clock::now();
     start.store(true, std::memory_order_release);
     producer();
@@ -98,7 +127,7 @@ template <std::size_t BatchSize, typename Event = event>
                         count,
                         [published](Event& output,
                                     std::size_t index) noexcept {
-                            output.value = published + index;
+                            write_event(output, published + index);
                     })) {
                     published += count;
                 }
@@ -111,8 +140,8 @@ template <std::size_t BatchSize, typename Event = event>
                     0,
                     BatchSize,
                     [&checksum](const Event& input,
-                                std::int64_t) noexcept {
-                        checksum += input.value;
+                                std::uint64_t) noexcept {
+                        checksum += event_checksum(input);
                     });
             }
         });
@@ -231,27 +260,33 @@ private:
         consumers>;
     stream_type stream;
     std::atomic<bool> start{false};
+    std::atomic<std::size_t> ready{0};
     std::array<std::uint64_t, consumers> checksums{};
     std::array<std::thread, consumers> threads;
 
     for (std::size_t index = 0; index < consumers; ++index) {
         threads[index] = std::thread([&, index] {
             pin_to_cpu(index + 1);
+            ready.fetch_add(1, std::memory_order_release);
             while (!start.load(std::memory_order_acquire)) {
                 std::this_thread::yield();
             }
             std::uint64_t consumed = 0;
+            std::uint64_t checksum = 0;
             while (consumed < event_count) {
                 const auto handler =
-                    [&, index](const event& input, std::int64_t) noexcept {
-                    checksums[index] += input.value;
-                };
+                    [&checksum](const event& input, std::uint64_t) noexcept {
+                        checksum += input.value;
+                    };
                 consumed += stream.consume_available(index, 16, handler);
             }
+            checksums[index] = checksum;
         });
     }
 
     pin_to_cpu(0);
+    while (ready.load(std::memory_order_acquire) != consumers) {
+    }
     const auto begin = std::chrono::steady_clock::now();
     start.store(true, std::memory_order_release);
     std::uint64_t published = 0;
@@ -280,26 +315,32 @@ private:
     constexpr std::size_t consumers = 3;
     std::array<spsc_ring, consumers> queues;
     std::atomic<bool> start{false};
+    std::atomic<std::size_t> ready{0};
     std::array<std::uint64_t, consumers> checksums{};
     std::array<std::thread, consumers> threads;
 
     for (std::size_t index = 0; index < consumers; ++index) {
         threads[index] = std::thread([&, index] {
             pin_to_cpu(index + 1);
+            ready.fetch_add(1, std::memory_order_release);
             while (!start.load(std::memory_order_acquire)) {
                 std::this_thread::yield();
             }
             std::uint64_t value = 0;
+            std::uint64_t checksum = 0;
             for (std::uint64_t consumed = 0; consumed < event_count;) {
                 if (queues[index].try_pop(value)) {
-                    checksums[index] += value;
+                    checksum += value;
                     ++consumed;
                 }
             }
+            checksums[index] = checksum;
         });
     }
 
     pin_to_cpu(0);
+    while (ready.load(std::memory_order_acquire) != consumers) {
+    }
     const auto begin = std::chrono::steady_clock::now();
     start.store(true, std::memory_order_release);
     for (std::uint64_t value = 0; value < event_count; ++value) {
@@ -327,6 +368,7 @@ void print(const measurement& result) {
 }  // namespace
 
 int main() {
+    pin_to_cpu(0);
     // Run the most contended baseline first so later comparisons do not give it
     // an accidental warm-cache advantage. Repeat externally for serious work.
     const auto mutex = benchmark_mutex_ring();
@@ -354,8 +396,9 @@ int main() {
     const bool correct =
         mutex.checksum == checksum && spsc.checksum == checksum &&
         batch_one.checksum == checksum &&
-        batch_sixteen.checksum == checksum && payload_64.checksum == checksum &&
-        payload_64_batch.checksum == checksum &&
+        batch_sixteen.checksum == checksum &&
+        payload_64.checksum == checksum * 8 &&
+        payload_64_batch.checksum == checksum * 8 &&
         three_queues.checksum == checksum * 3 &&
         multicast.checksum == checksum * 3;
     const bool mutex_target =

@@ -6,8 +6,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <pthread.h>
 #include <sched.h>
 #include <string_view>
@@ -27,7 +29,7 @@ struct event_8 final {
 
 struct event_64 final {
     std::uint64_t value{};
-    std::array<std::byte, 56> payload{};
+    std::array<std::uint64_t, 7> payload{};
 };
 
 struct timed_event_8 final {
@@ -36,7 +38,7 @@ struct timed_event_8 final {
 
 struct timed_event_64 final {
     clock_type::time_point published_at{};
-    std::array<std::byte, 56> payload{};
+    std::array<std::uint64_t, 7> payload{};
 };
 
 static_assert(sizeof(event_8) == 8);
@@ -44,11 +46,38 @@ static_assert(sizeof(event_64) == 64);
 static_assert(sizeof(timed_event_8) == 8);
 static_assert(sizeof(timed_event_64) == 64);
 
+template <typename Event>
+void fill_payload(Event& output, std::uint64_t sequence) noexcept {
+    if constexpr (requires { output.payload; }) {
+        for (std::size_t index = 0; index < output.payload.size(); ++index) {
+            output.payload[index] = sequence + index + 1;
+        }
+    }
+}
+
+template <typename Event>
+[[nodiscard]] bool payload_is_correct(const Event& input,
+                                      std::uint64_t sequence) noexcept {
+    if constexpr (requires { input.payload; }) {
+        for (std::size_t index = 0; index < input.payload.size(); ++index) {
+            if (input.payload[index] != sequence + index + 1) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 void pin_to_cpu(std::size_t cpu) noexcept {
     cpu_set_t set;
     CPU_ZERO(&set);
     CPU_SET(cpu, &set);
-    (void)pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+    const auto result = pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+    if (result != 0) {
+        std::cerr << "failed to pin benchmark thread to CPU " << cpu
+                  << " (error " << result << ")\n";
+        std::abort();
+    }
 }
 
 template <std::size_t Capacity,
@@ -62,6 +91,7 @@ void throughput(std::string_view name) {
         ConsumerCount>;
     stream_type stream;
     std::atomic<bool> start{false};
+    std::atomic<std::size_t> ready{0};
     std::array<std::uint64_t, ConsumerCount> checksums{};
     std::array<std::thread, ConsumerCount> consumers;
 
@@ -69,22 +99,33 @@ void throughput(std::string_view name) {
          ++consumer_index) {
         consumers[consumer_index] = std::thread([&, consumer_index] {
             pin_to_cpu(consumer_index + 1);
+            ready.fetch_add(1, std::memory_order_release);
             while (!start.load(std::memory_order_acquire)) {
             }
             std::uint64_t consumed = 0;
+            std::uint64_t checksum = 0;
+            std::uint64_t expected_sequence = 0;
+            bool ordered = true;
             while (consumed < event_count) {
                 consumed += stream.consume_available(
                     consumer_index,
                     BatchSize,
-                    [&, consumer_index](const Event& input,
-                                        std::int64_t) noexcept {
-                        checksums[consumer_index] += input.value;
+                    [&](const Event& input, std::uint64_t sequence) noexcept {
+                        ordered = ordered && sequence == expected_sequence &&
+                                  input.value == expected_sequence &&
+                                  payload_is_correct(input, expected_sequence);
+                        checksum += input.value;
+                        ++expected_sequence;
                     });
             }
+            checksums[consumer_index] =
+                ordered ? checksum : std::numeric_limits<std::uint64_t>::max();
         });
     }
 
     pin_to_cpu(0);
+    while (ready.load(std::memory_order_acquire) != ConsumerCount) {
+    }
     const auto begin = clock_type::now();
     start.store(true, std::memory_order_release);
     std::uint64_t published = 0;
@@ -95,6 +136,7 @@ void throughput(std::string_view name) {
                 count,
                 [published](Event& output, std::size_t index) noexcept {
                     output.value = published + index;
+                    fill_payload(output, published + index);
                 })) {
             published += count;
         }
@@ -128,24 +170,28 @@ void latency(std::string_view name) {
         ConsumerCount>;
     stream_type stream;
     std::atomic<bool> start{false};
+    std::atomic<std::size_t> ready{0};
     std::vector<std::int64_t> samples(latency_samples * ConsumerCount);
+    std::array<bool, ConsumerCount> correct{};
     std::array<std::thread, ConsumerCount> consumers;
 
     for (std::size_t consumer_index = 0; consumer_index < ConsumerCount;
          ++consumer_index) {
         consumers[consumer_index] = std::thread([&, consumer_index] {
             pin_to_cpu(consumer_index + 1);
+            ready.fetch_add(1, std::memory_order_release);
             while (!start.load(std::memory_order_acquire)) {
             }
             std::size_t consumed = 0;
+            std::uint64_t expected_sequence = 0;
+            bool ordered = true;
             while (consumed < total) {
                 consumed += stream.consume_available(
                     consumer_index,
                     BatchSize,
                     [&, consumer_index](const Event& input,
-                                        std::int64_t sequence) noexcept {
-                        if (sequence >=
-                            static_cast<std::int64_t>(latency_warmup)) {
+                                        std::uint64_t sequence) noexcept {
+                        if (sequence >= latency_warmup) {
                             const auto index =
                                 static_cast<std::size_t>(sequence) -
                                 latency_warmup;
@@ -155,32 +201,45 @@ void latency(std::string_view name) {
                                     clock_type::now() - input.published_at)
                                     .count();
                         }
+                        ordered = ordered && sequence == expected_sequence &&
+                                  payload_is_correct(input, sequence);
+                        ++expected_sequence;
                     });
             }
+            correct[consumer_index] = ordered;
         });
     }
 
     pin_to_cpu(0);
+    while (ready.load(std::memory_order_acquire) != ConsumerCount) {
+    }
     start.store(true, std::memory_order_release);
     for (std::size_t published = 0; published < total;) {
         const auto count = std::min(BatchSize, total - published);
         while (!stream.try_publish_batch(
             count,
-            [](Event& output, std::size_t) noexcept {
+            [published](Event& output, std::size_t index) noexcept {
                 output.published_at = clock_type::now();
+                fill_payload(output, published + index);
             })) {
         }
         published += count;
-        const auto last = static_cast<std::int64_t>(published - 1);
+        const auto position = static_cast<std::uint64_t>(published);
         for (std::size_t consumer_index = 0;
              consumer_index < ConsumerCount;
              ++consumer_index) {
-            while (stream.consumer_sequence(consumer_index) < last) {
+            while (stream.consumer_position(consumer_index) != position) {
             }
         }
     }
     for (auto& consumer : consumers) {
         consumer.join();
+    }
+    if (!std::all_of(correct.begin(), correct.end(), [](bool value) {
+            return value;
+        })) {
+        std::cerr << "latency payload or ordering validation failed\n";
+        std::abort();
     }
     std::sort(samples.begin(), samples.end());
     const auto percentile = [&samples](double fraction) {
@@ -219,6 +278,7 @@ void latency_batches(std::string_view name) {
 }  // namespace
 
 int main() {
+    pin_to_cpu(0);
     std::cout << "kind,name,capacity,batch,payload,consumers,value1,value2\n";
     throughput_batches<1024, event_8>("event8");
     throughput_batches<65'536, event_8>("event8");
