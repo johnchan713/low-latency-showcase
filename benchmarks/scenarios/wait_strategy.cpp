@@ -153,7 +153,7 @@ template <typename WaitPolicy>
         }
         wait.reset();
         while (stream.consumer_sequence(0) <
-               static_cast<std::int64_t>(sequence)) {
+               static_cast<decltype(stream.consumer_sequence(0))>(sequence)) {
             wait.wait();
         }
         wait.reset();

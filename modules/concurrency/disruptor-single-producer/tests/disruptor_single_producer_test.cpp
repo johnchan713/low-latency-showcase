@@ -291,7 +291,7 @@ using small_disruptor =
 
     if (!disruptor.try_publish_batch(
             4,
-            [initial](event& output, std::size_t index) noexcept {
+            [](event& output, std::size_t index) noexcept {
                 output.value = initial + index;
             })) {
         return false;
@@ -392,7 +392,7 @@ using small_disruptor =
     auto consumer = disruptor.make_consumer<0>();
 
     if (!disruptor.try_publish(
-            [initial](event& output) noexcept { output.value = initial; }) ||
+            [](event& output) noexcept { output.value = initial; }) ||
         disruptor.try_publish(
             [](event& output) noexcept { output.value = 0; })) {
         return false;
