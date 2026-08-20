@@ -10,25 +10,45 @@ explicit **use when / avoid when** explanation.
 
 ## Performance at a glance
 
-The first capsule moves small events at **hundreds of millions per second**
-while keeping producer-to-consumer handoff in the **tens to low hundreds of
-nanoseconds**.
+The first capsule moves small batched events at **hundreds of millions per
+second** while keeping an unbatched producer-to-consumer handoff in the **tens
+to low hundreds of nanoseconds**.
 
 Representative results from the shared AMD EPYC development VM, using GCC 13,
-`-O3`, LTO, native CPU tuning, pinned producer/consumer threads, and correctness
-checksums:
+`-O3`, LTO, native CPU tuning, pinned producer/consumer threads, exact sequence
+validation, and full-payload checks. These are five-run medians; the shared VM
+has substantial scheduling dispersion.
 
-| Disruptor workload | Throughput | Median handoff latency across 7 runs |
-|---|---:|---:|
-| 8-byte event, batch 1 | **120–140M events/s** | p50 **75 ns**, p99 **121 ns** |
-| 8-byte event, batch 16 | **350–470M events/s** | p50 **465 ns**, p99 **497 ns** |
-| 64-byte event, batch 1 | **85–140M events/s** | p50 **111 ns**, p99 **145 ns** |
-| 64-byte event, batch 16 | median approximately **483M events/s** | p50 **581 ns**, p99 **695 ns** |
-| 8-byte batch-16 multicast to 3 consumers | **65–195M source events/s** | p50 **821 ns**, p99 **1,252 ns** |
+| Disruptor workload | Throughput | Handoff p50 | Handoff p99 |
+|---|---:|---:|---:|
+| 8-byte event, batch 1 | **83M events/s** | **80 ns** | **140 ns** |
+| 8-byte event, batch 16 | **478M events/s** | **485 ns** | **511 ns** |
+| 64-byte event, batch 1 | **78M events/s** | **220 ns** | **436 ns** |
+| 64-byte event, batch 16 | **334M events/s** | **2,529 ns** | **2,869 ns** |
+| 8-byte batch-16 multicast to 3 consumers | **121M source events/s** | **846 ns** | **1,061 ns** |
 
 Batching raises throughput by sharing publication work; it does not mean that
 one event crosses the ring in two nanoseconds. Throughput and handoff latency
 measure different boundaries.
+
+The 64-byte cases now write and verify all 64 bytes. Earlier figures that only
+touched the first word were faster but represented cache-line stride rather
+than complete payload processing.
+
+### Latest optimization delta
+
+The latest pass improves fixed-index consumption without weakening the
+release/acquire synchronization contract:
+
+| Targeted path | Previous | Optimized | Change |
+|---|---:|---:|---:|
+| 8-byte publish/drain 64/64 | 812M events/s | **904M events/s** | **+11%** |
+| Batch-1 handoff p50 | 65 ns | **65 ns** | unchanged |
+| Batch-1 handoff p99 | 126 ns | **125 ns** | effectively unchanged |
+
+The throughput gain uses the thread-owned `make_consumer<Index>()` handle,
+which reuses an already acquired publication range. When no range can be
+reused, the advantage can shrink or disappear.
 
 ### Wait-strategy comparison
 

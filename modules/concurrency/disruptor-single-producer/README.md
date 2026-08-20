@@ -31,12 +31,19 @@ alignment.
 
 - One thread owns all publication calls.
 - One thread owns each consumer index.
+- Prefer one `make_consumer<Index>()` handle per consumer thread. The handle
+  caches its position and last acquire-observed publication boundary.
 - A consumer callback receives `const Event&` and must be `noexcept`.
 - A producer callback receives `Event&` and must be `noexcept`.
 - `try_publish` and `try_publish_batch` return `false` instead of blocking when
   the slowest consumer still owns a required slot.
 - Batches are all-or-nothing and become visible with one release store.
 - Destruction is only safe after all producer and consumer threads have stopped.
+
+Sequence positions are unsigned and end-exclusive internally. Modular unsigned
+distance keeps rollover defined when a long-running stream crosses
+`UINT64_MAX`. The optional constructor position supports deterministic replay
+and rollover testing; normal streams start at zero.
 
 Construction value-initializes every in-ring event, so trivial in-ring storage
 is allocated and touched before the hot path. If an event owns separate dynamic
@@ -47,6 +54,9 @@ The producer writes an event before release-publishing its sequence. Consumers
 acquire that sequence before reading and release their completed sequences. The
 producer acquire-reads the slowest consumer before reusing storage. These edges
 both publish event data and prevent overwrite while any consumer can still read.
+When backpressured, the producer checks the consumer that blocked the previous
+attempt first. If it remains behind, the producer safely rejects without
+touching every other cursor. Successful reuse still acquire-checks all consumers.
 
 ## Deliberate exclusions
 
@@ -69,7 +79,7 @@ and are intentionally not latency-threshold CTest tests.
 
 ## Benchmarks
 
-Build and run the two native benchmark executables:
+Build and run the native benchmark executables:
 
 ```sh
 cmake --preset benchmark-native
@@ -77,6 +87,7 @@ cmake --build --preset benchmark-native
 ./build/benchmark-native/benchmarks/lls_disruptor_single_producer_benchmark
 ./build/benchmark-native/benchmarks/lls_disruptor_single_producer_latency_benchmark
 ./build/benchmark-native/benchmarks/lls_disruptor_single_producer_configuration_sweep
+./build/benchmark-native/benchmarks/lls_disruptor_single_producer_next_frontier
 ```
 
 The throughput benchmark transfers 5,000,000 events through a 65,536-slot ring.
@@ -84,39 +95,42 @@ It compares batch sizes 1 and 16, 8-byte and 64-byte events, a mutex-protected
 ring, a specialized SPSC ring, and three independent SPSC queues. The multicast
 case sends every source event to three consumers.
 
-Representative observations from the development AMD EPYC virtual machine,
-using GCC 13, `-O3`, LTO, native architecture tuning, and pinned threads:
+Hardened five-run medians from the development AMD EPYC virtual machine, using
+GCC 13, `-O3`, LTO, native architecture tuning, pinned threads, exact sequence
+validation, and complete payload checks:
 
 | Workload | Observed result |
 |---|---:|
-| 8-byte event, batch 1 | typically 120–140 million events/s |
-| 8-byte event, batch 16 | typically 350–470 million events/s |
-| 64-byte event, batch 1 | typically 85–140 million events/s |
-| 64-byte event, batch 16 | median approximately 483 million events/s |
-| Source event multicast to 3 consumers | roughly 65–195 million events/s |
+| 8-byte event, batch 1 | 83 million events/s |
+| 8-byte event, batch 16 | 478 million events/s |
+| 64-byte event, batch 1 | 78 million events/s |
+| 64-byte event, batch 16 | 334 million events/s |
+| 8-byte batch-16 multicast to 3 consumers | 121 million source events/s |
 | Blocking single-slot latency p50 | roughly 17–27 us |
 
-The expanded latency benchmark records 200,000 post-warm-up samples per
-consumer. Median percentiles across seven native, pinned runs were:
+The configuration latency sweep records 50,000 post-warm-up samples per
+consumer. Median percentiles across five native, pinned runs were:
 
 | Workload | Handoff p50 | Handoff p99 |
 |---|---:|---:|
-| 8-byte event, batch 1 | 75 ns | 121 ns |
-| 8-byte event, batch 16 | 465 ns | 497 ns |
-| 64-byte event, batch 1 | 111 ns | 145 ns |
-| 64-byte event, batch 16 | 581 ns | 695 ns |
-| 8-byte event, batch 16, multicast to 3 consumers | 821 ns | 1,252 ns |
+| 8-byte event, batch 1 | 80 ns | 140 ns |
+| 8-byte event, batch 16 | 485 ns | 511 ns |
+| 64-byte event, batch 1 | 220 ns | 436 ns |
+| 64-byte event, batch 16 | 2,529 ns | 2,869 ns |
+| 8-byte event, batch 16, multicast to 3 consumers | 846 ns | 1,061 ns |
 
 The multicast distribution combines all three complete consumer handoffs. Each
-run verifies that every consumer observed every published sequence.
+run verifies exact sequence order. The 64-byte cases write and verify every
+payload word; older measurements that touched only the first eight bytes are
+not directly comparable.
 
 The cache-line-aligned ring changed the collected 64-byte-event median from
 about 83 million to 96 million events/s, approximately a 15% improvement on
 this host. It does not enlarge an 8-byte event to 64 bytes; it aligns the start
 of the ring so a cache-line-sized event does not unnecessarily span two lines.
 
-Throughput is not individual-event latency. For example, 135 million events/s
-means an average pipeline completion interval of about 7.4 ns, while an event's
+Throughput is not individual-event latency. For example, 100 million events/s
+means an average pipeline completion interval of 10 ns, while an event's
 complete producer-to-consumer handoff still takes tens or hundreds of
 nanoseconds. Batching increases throughput by sharing publication overhead, but
 can increase latency if a producer waits to assemble a batch.
@@ -125,6 +139,13 @@ can increase latency if a producer waits to assemble a batch.
 to the requested maximum but never waits for that many events. Producers can do
 the same by passing only the number of source events that are already ready to
 `try_publish_batch`; they should not wait merely to fill a larger batch.
+
+For a fixed consumer index, `make_consumer<Index>()` is the preferred hot-loop
+API. In the next-frontier sweep, publication/drain 64/64 improved from a
+five-run median of 812M events/s through the indexed API to 904M through the
+handle, about 11%. Batch-1 latency remained effectively unchanged: p50 65 ns
+and p99 125–126 ns. The handle is not magic; if no acquired range can be reused,
+its gain may vanish.
 
 The cross-module wait-strategy scenario compares empty polling, x86 `PAUSE`,
 and adaptive pause-then-yield from the [`spin-wait`](../spin-wait/) capsule. On
