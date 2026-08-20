@@ -18,13 +18,13 @@ Representative results from the shared AMD EPYC development VM, using GCC 13,
 `-O3`, LTO, native CPU tuning, pinned producer/consumer threads, and correctness
 checksums:
 
-| Disruptor workload | Throughput | Handoff latency |
+| Disruptor workload | Throughput | Median handoff latency across 7 runs |
 |---|---:|---:|
-| 8-byte event, batch 1 | **120–140M events/s** | p50 **60–100 ns**, p99 **80–160 ns** |
-| 8-byte event, batch 16 | **350–470M events/s** | Not measured in the throughput run |
-| 64-byte event, batch 1 | **85–140M events/s** | Not measured in the throughput run |
-| 64-byte event, batch 16 | median approximately **483M events/s** | Not measured in the throughput run |
-| One source event multicast to 3 consumers | **65–195M source events/s** | Not measured in the throughput run |
+| 8-byte event, batch 1 | **120–140M events/s** | p50 **75 ns**, p99 **121 ns** |
+| 8-byte event, batch 16 | **350–470M events/s** | p50 **465 ns**, p99 **497 ns** |
+| 64-byte event, batch 1 | **85–140M events/s** | p50 **111 ns**, p99 **145 ns** |
+| 64-byte event, batch 16 | median approximately **483M events/s** | p50 **581 ns**, p99 **695 ns** |
+| 8-byte batch-16 multicast to 3 consumers | **65–195M source events/s** | p50 **821 ns**, p99 **1,252 ns** |
 
 Batching raises throughput by sharing publication work; it does not mean that
 one event crosses the ring in two nanoseconds. Throughput and handoff latency
