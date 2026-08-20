@@ -76,6 +76,7 @@ cmake --preset benchmark-native
 cmake --build --preset benchmark-native
 ./build/benchmark-native/benchmarks/lls_disruptor_single_producer_benchmark
 ./build/benchmark-native/benchmarks/lls_disruptor_single_producer_latency_benchmark
+./build/benchmark-native/benchmarks/lls_disruptor_single_producer_configuration_sweep
 ```
 
 The throughput benchmark transfers 5,000,000 events through a 65,536-slot ring.
@@ -147,3 +148,6 @@ These figures are observations, not portable guarantees. Shared virtual-machine
 scheduling produced occasional throughput drops and 250–470 ns latency tails.
 Repeat runs, retain the distribution, record the system configuration, and use
 the repository's benchmarking methodology before making performance claims.
+The full [optimization tournament](../../../docs/disruptor-optimization-tournament.md)
+records tested winners, rejected variants, batch/capacity sweeps, and the
+techniques that require dedicated deployment hardware.
