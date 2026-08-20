@@ -84,7 +84,8 @@ template <std::size_t BatchSize, typename Event = event>
 
     return run_pair(
         sizeof(Event) == 64
-            ? "disruptor 64-byte batch=1"
+            ? (BatchSize == 1 ? "disruptor 64-byte batch=1"
+                              : "disruptor 64-byte batch=16")
             : (BatchSize == 1 ? "disruptor batch=1"
                               : "disruptor batch=16"),
         [&] {
@@ -98,7 +99,7 @@ template <std::size_t BatchSize, typename Event = event>
                         [published](Event& output,
                                     std::size_t index) noexcept {
                             output.value = published + index;
-                        })) {
+                    })) {
                     published += count;
                 }
             }
@@ -333,6 +334,7 @@ int main() {
     const auto batch_one = benchmark_disruptor<1>();
     const auto batch_sixteen = benchmark_disruptor<16>();
     const auto payload_64 = benchmark_disruptor<1, event_64>();
+    const auto payload_64_batch = benchmark_disruptor<16, event_64>();
     const auto three_queues = benchmark_three_spsc_rings();
     const auto multicast = benchmark_multicast_disruptor();
 
@@ -342,6 +344,7 @@ int main() {
           batch_one,
           batch_sixteen,
           payload_64,
+          payload_64_batch,
           three_queues,
           multicast}) {
         print(result);
@@ -352,6 +355,7 @@ int main() {
         mutex.checksum == checksum && spsc.checksum == checksum &&
         batch_one.checksum == checksum &&
         batch_sixteen.checksum == checksum && payload_64.checksum == checksum &&
+        payload_64_batch.checksum == checksum &&
         three_queues.checksum == checksum * 3 &&
         multicast.checksum == checksum * 3;
     const bool mutex_target =
