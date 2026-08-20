@@ -8,6 +8,49 @@ acceptable trade-offs determine whether an optimization helps. Each accepted
 technique must therefore include a baseline, reproducible measurements, and an
 explicit **use when / avoid when** explanation.
 
+## Performance at a glance
+
+The first capsule moves small events at **hundreds of millions per second**
+while keeping producer-to-consumer handoff in the **tens to low hundreds of
+nanoseconds**.
+
+Representative results from the shared AMD EPYC development VM, using GCC 13,
+`-O3`, LTO, native CPU tuning, pinned producer/consumer threads, and correctness
+checksums:
+
+| Disruptor workload | Throughput | Handoff latency |
+|---|---:|---:|
+| 8-byte event, batch 1 | **120–140M events/s** | p50 **60–100 ns**, p99 **80–160 ns** |
+| 8-byte event, batch 16 | **350–470M events/s** | Not measured in the throughput run |
+| 64-byte event, batch 1 | **85–140M events/s** | Not measured in the throughput run |
+| 64-byte event, batch 16 | median approximately **483M events/s** | Not measured in the throughput run |
+| One source event multicast to 3 consumers | **65–195M source events/s** | Not measured in the throughput run |
+
+Batching raises throughput by sharing publication work; it does not mean that
+one event crosses the ring in two nanoseconds. Throughput and handoff latency
+measure different boundaries.
+
+### Wait-strategy comparison
+
+Seven paired runs compared equivalent polling loops with 5,000,000 events for
+throughput and 200,000 post-warm-up handoff samples:
+
+| Polling mode | Throughput | p50 | p99 |
+|---|---:|---:|---:|
+| Empty spin | 88M events/s | 85 ns | 145 ns |
+| x86 `PAUSE` | 84M events/s | 95 ns | 145 ns |
+| Adaptive: 64 pauses, then yield | **96M events/s** | **81 ns** | **136 ns** |
+
+Adaptive waiting won this particular shared-VM handoff scenario: approximately
+9% more throughput, 5% lower p50, and 6% lower p99 than empty spinning. It is a
+selectable policy, not a universal default; an isolated physical core or a
+different workload can reverse the result.
+
+Build and reproduce the measurements with `benchmark-native`; see the
+[`single-producer-disruptor` benchmark notes](modules/concurrency/disruptor-single-producer/README.md#benchmarks)
+and [benchmarking methodology](docs/benchmarking-methodology.md) for workload
+details, limitations, and interpretation.
+
 ## Current status
 
 The repository is at its foundation stage. It provides:
