@@ -19,6 +19,7 @@ The repository is at its foundation stage. It provides:
 - a capsule-first hierarchy for reusable modules and integrations;
 - an experimental single-producer multicast Disruptor capsule with correctness,
   sanitizer, throughput, and handoff-latency coverage;
+- explicit busy-spin, yield, and adaptive spin-wait policies for x86 polling;
 - dedicated locations for future test support, benchmark support, and
   benchmark scenarios; and
 - scripts for recording system information and pinning a process to CPUs.

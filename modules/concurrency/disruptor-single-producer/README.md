@@ -38,6 +38,11 @@ alignment.
 - Batches are all-or-nothing and become visible with one release store.
 - Destruction is only safe after all producer and consumer threads have stopped.
 
+Construction value-initializes every in-ring event, so trivial in-ring storage
+is allocated and touched before the hot path. If an event owns separate dynamic
+buffers, the caller remains responsible for allocating and touching those
+buffers before starting latency-sensitive threads.
+
 The producer writes an event before release-publishing its sequence. Consumers
 acquire that sequence before reading and release their completed sequences. The
 producer acquire-reads the slowest consumer before reusing storage. These edges
@@ -101,6 +106,29 @@ means an average pipeline completion interval of about 7.4 ns, while an event's
 complete producer-to-consumer handoff still takes tens or hundreds of
 nanoseconds. Batching increases throughput by sharing publication overhead, but
 can increase latency if a producer waits to assemble a batch.
+
+`consume_available` already performs adaptive consumer batching: it handles up
+to the requested maximum but never waits for that many events. Producers can do
+the same by passing only the number of source events that are already ready to
+`try_publish_batch`; they should not wait merely to fill a larger batch.
+
+The cross-module wait-strategy scenario compares empty polling, x86 `PAUSE`,
+and adaptive pause-then-yield from the [`spin-wait`](../spin-wait/) capsule. On
+the shared development VM, its seven-run median was approximately:
+
+| Polling policy | Throughput | Handoff p50 | Handoff p99 |
+|---|---:|---:|---:|
+| Empty loop | 88 million events/s | 85 ns | 145 ns |
+| `PAUSE` | 84 million events/s | 95 ns | 145 ns |
+| Adaptive: 64 pauses, then yield | 96 million events/s | 81 ns | 136 ns |
+
+Adaptive waiting improved median throughput by about 9%, p50 by about 5%, and
+p99 by about 6% on this shared VM. This is not a universal winner: on a truly
+isolated physical core, yielding can worsen tails, so retain the policy choice
+at the call site.
+An explicit software prefetch experiment was rejected after reducing the
+64-byte batch-16 median by about 28%; sequential hardware prefetch was already
+sufficient.
 
 These figures are observations, not portable guarantees. Shared virtual-machine
 scheduling produced occasional throughput drops and 250–470 ns latency tails.
