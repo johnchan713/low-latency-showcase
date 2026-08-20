@@ -91,10 +91,23 @@ using GCC 13, `-O3`, LTO, native architecture tuning, and pinned threads:
 | 8-byte event, batch 1 | typically 120–140 million events/s |
 | 8-byte event, batch 16 | typically 350–470 million events/s |
 | 64-byte event, batch 1 | typically 85–140 million events/s |
+| 64-byte event, batch 16 | median approximately 483 million events/s |
 | Source event multicast to 3 consumers | roughly 65–195 million events/s |
-| Busy-spin handoff latency p50 | typically 60–100 ns |
-| Busy-spin handoff latency p99 | typically 80–160 ns |
 | Blocking single-slot latency p50 | roughly 17–27 us |
+
+The expanded latency benchmark records 200,000 post-warm-up samples per
+consumer. Median percentiles across seven native, pinned runs were:
+
+| Workload | Handoff p50 | Handoff p99 |
+|---|---:|---:|
+| 8-byte event, batch 1 | 75 ns | 121 ns |
+| 8-byte event, batch 16 | 465 ns | 497 ns |
+| 64-byte event, batch 1 | 111 ns | 145 ns |
+| 64-byte event, batch 16 | 581 ns | 695 ns |
+| 8-byte event, batch 16, multicast to 3 consumers | 821 ns | 1,252 ns |
+
+The multicast distribution combines all three complete consumer handoffs. Each
+run verifies that every consumer observed every published sequence.
 
 The cache-line-aligned ring changed the collected 64-byte-event median from
 about 83 million to 96 million events/s, approximately a 15% improvement on
