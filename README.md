@@ -16,14 +16,17 @@ The repository is at its foundation stage. It provides:
 - target-scoped CMake configuration;
 - Ninja-based development, release, sanitizer, and native benchmark presets;
 - GCC and Clang continuous-integration builds;
-- a capsule-first hierarchy for future reusable modules and integrations;
+- a capsule-first hierarchy for reusable modules and integrations;
+- an experimental single-producer multicast Disruptor capsule with correctness,
+  sanitizer, throughput, and handoff-latency coverage;
 - dedicated locations for future test support, benchmark support, and
   benchmark scenarios; and
 - scripts for recording system information and pinning a process to CPUs.
 
-The first technical topic will be measurement correctness. More interesting
-structures, such as cache-aware layouts and queues, should only arrive after the
-project can measure them honestly.
+The first reusable concurrency capsule is the
+[`single-producer-disruptor`](modules/concurrency/disruptor-single-producer/).
+It is intentionally narrow: one producer, a fixed set of multicast consumers,
+bounded storage, and explicit backpressure.
 
 ## Requirements
 
