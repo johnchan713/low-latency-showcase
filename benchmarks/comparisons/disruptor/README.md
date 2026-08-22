@@ -72,6 +72,73 @@ size 85,721 bytes
 
 [`dependencies.lock`](dependencies.lock) pins the URL, version, byte size, and digest. [`fetch_dependencies.sh`](fetch_dependencies.sh) refuses a jar that does not match both size and SHA-256. Maven and Gradle are not required.
 
+## Producer-session optimization A/B: 2026-08-22
+
+The current C++ path was measured directly against base revision `165eda81` on
+the same pinned Intel Xeon Platinum 8370C host. The implementation commit in
+this branch combines two changes: a thread-owned producer handle keeps its
+cursor, conservative capacity cache, blocker index, and ring pointer private to
+the producer session; producer and consumer batches traverse at most two
+physical ring spans instead of masking every event index. The measurements
+therefore apply to the combined change, not to either mechanism in isolation.
+
+Every one of the 84 measured throughput rows passed affinity, event-count,
+checksum, payload, and exact-order validation. Each configuration used seven
+alternating-order pairs and two 100-million-event warm-ups per process; the
+extra first-position assignment was alternated across configurations. P1 used
+300 million measured events per run, while P16 and P64 used two billion.
+
+| `P` | `D` | Family | Base median | Candidate median | Paired candidate/base (95% CI) |
+|---:|---:|---|---:|---:|---:|
+| 1 | 1 | strict | 80M/s | 216M/s | 2.70× (1.69–4.30) |
+| 1 | 65,536 | opportunistic | 61M/s | 137M/s | 2.17× (1.24–3.81) |
+| 16 | 16 | strict | 677M/s | 908M/s | 1.35× (1.29–1.40) |
+| 16 | 65,536 | opportunistic | 864M/s | 1.32B/s | 1.46× (1.24–1.71) |
+| 64 | 64 | strict | 962M/s | 1.43B/s | 1.53× (1.39–1.69) |
+| 64 | 65,536 | opportunistic | 924M/s | 1.46B/s | 1.54× (1.40–1.69) |
+
+All six paired confidence intervals exclude parity. P1 was especially
+scheduler-sensitive: its base-first/candidate-first order effects were 1.61 and
+2.10, respectively. Several batched order effects also exceeded the 0.95–1.05
+ideal band. These are therefore qualified same-host results, not portable
+throughput guarantees. The paired ratios are calculated from within-pair ratios
+and are not quotients of the rounded medians.
+
+The candidate throughput executable's text grew from 86,314 to 102,634 bytes
+(18.9%). In return, GCC 13 keeps producer session state in registers in the P1
+success loop, while the batched common path uses adjacent ring accesses and
+isolates the rare physical wrap. This code-size/performance tradeoff is part of
+the result.
+
+The single-in-flight latency audit used 15 alternating pairs, one million
+warm-up events, and two million measured events per process. All 30 rows passed
+the same correctness and affinity gates. Lower ratios favour the candidate.
+
+| Percentile | Base median | Candidate median | Paired candidate/base (95% CI) |
+|---:|---:|---:|---:|
+| p50 | 143 ns | 140 ns | 0.858 (0.609–1.209) |
+| p90 | 170 ns | 159 ns | 0.918 (0.652–1.293) |
+| p95 | 186 ns | 164 ns | 0.854 (0.603–1.209) |
+| p99 | 265 ns | 221 ns | 0.855 (0.576–1.268) |
+| p99.9 | 509 ns | 348 ns | 0.603 (0.340–1.071) |
+
+Every displayed latency median decreased, but every confidence interval still
+crosses parity. The defensible conclusion is **no statistically resolved
+latency shift**, not a proven latency improvement or non-inferiority result.
+Maximum latency remains a scheduler-sensitive diagnostic and is retained only
+in the machine-readable data.
+
+The exact summaries, order effects, pair-win counts, revisions, and event counts
+are preserved in
+[`producer-handle-throughput-20260822.csv`](producer-handle-throughput-20260822.csv)
+and
+[`producer-handle-latency-20260822.csv`](producer-handle-latency-20260822.csv).
+The audited candidate binaries had SHA-256
+`9655e049a713c9573eb6b919d1b67b23c4226c129880ed968f8b1e9c5f99f283`
+(throughput) and
+`6b34ae5d606eecfcfb78408bf65af621145422ee0155294df34b9863795a8a49`
+(latency).
+
 ## Audited completion-throughput pass: 2026-08-21
 
 The final pass used GCC 13.3.0, OpenJDK 17.0.19, and two individually pinned

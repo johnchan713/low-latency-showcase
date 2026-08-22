@@ -92,6 +92,27 @@ and are intentionally not latency-threshold CTest tests.
 
 ## Benchmarks
 
+The latest same-host A/B audit compares the preferred producer session and
+two-span physical traversal against the prior direct producer/per-event-mask
+path. On the pinned Intel Xeon Platinum 8370C host, all six throughput
+confidence intervals excluded parity:
+
+| Producer / drain | Base median | Optimized median | Paired gain (95% CI) |
+|---|---:|---:|---:|
+| 1 / 1 | 80M/s | 216M/s | 2.70× (1.69–4.30) |
+| 1 / 65,536 | 61M/s | 137M/s | 2.17× (1.24–3.81) |
+| 16 / 16 | 677M/s | 908M/s | 1.35× (1.29–1.40) |
+| 16 / 65,536 | 864M/s | 1.32B/s | 1.46× (1.24–1.71) |
+| 64 / 64 | 962M/s | 1.43B/s | 1.53× (1.39–1.69) |
+| 64 / 65,536 | 924M/s | 1.46B/s | 1.54× (1.40–1.69) |
+
+All measured latency medians also decreased (p50 143→140 ns, p99 265→221 ns,
+p99.9 509→348 ns), but their confidence intervals crossed parity, so latency
+remains statistically unresolved rather than a proven improvement. The
+[complete paired audit](../../../benchmarks/comparisons/disruptor/README.md#producer-session-optimization-ab-2026-08-22)
+records methodology, order effects, code-size cost, exact summaries, and binary
+hashes.
+
 Build and run the native benchmark executables:
 
 ```sh
