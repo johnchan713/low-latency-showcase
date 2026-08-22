@@ -28,7 +28,13 @@ Do not combine their numbers or infer latency from an events-per-second rate.
 
 `P` and `D` are separate command-line fields and separate CSV columns. The named families intentionally constrain their relationship so a row cannot claim “strict” or “opportunistic” while running another policy. Supported `P` values are 1, 16, and 64; supported `D` specializations are 1, 16, 64, and 65,536.
 
-The C++ program dispatches outside the timed region to compile-time `<P,D>` specializations and uses `make_consumer<0>()`, the preferred thread-owned handle. Java uses separate literal `P=1`, `P=16`, and `P=64` publication methods. Its drain cap remains the official runtime `BatchEventProcessorBuilder.setMaxBatchSize(D)` path in LMAX Disruptor 4.0.0. This real API/code-generation difference is part of the implementations being compared; the runner records both build profiles and all execution flags.
+The C++ program dispatches outside the timed region to compile-time `<P,D>`
+specializations and uses the preferred thread-owned `make_producer()` and
+`make_consumer<0>()` handles. Java uses separate literal `P=1`, `P=16`, and
+`P=64` publication methods. Its drain cap remains the official runtime
+`BatchEventProcessorBuilder.setMaxBatchSize(D)` path in LMAX Disruptor 4.0.0.
+This real API/code-generation difference is part of the implementations being
+compared; the runner records both build profiles and all execution flags.
 
 The primary Java claim policy is `tryNext(P)`: like C++
 `try_publish_batch(P)`, it makes one all-or-nothing nonblocking claim with

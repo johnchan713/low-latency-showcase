@@ -30,12 +30,23 @@ cache-line-sized event from straddling two lines because of ordinary heap
 alignment.
 
 - One thread owns all publication calls.
+- Exactly one live publication path owns the producer state. Prefer one
+  `make_producer()` handle for a sustained producer hot loop; while it lives,
+  do not create another producer handle or call publication methods directly on
+  the disruptor. Destroying the handle synchronizes its cached cursor and
+  capacity state so direct publication or a later handle can resume.
+- Producer handles are move-only, remain owned by one producer thread, and must
+  not outlive the disruptor. Producer callbacks must not re-enter publication
+  or retain an `Event&` for later mutation; a handle callback must also not move
+  or destroy its handle. Debug builds assert the exclusive-publication and
+  callback-reentrancy rules.
 - One thread owns each consumer index.
 - Exactly one live consumption path owns each consumer index. Prefer one
   `make_consumer<Index>()` handle per consumer thread; do not create multiple
   handles for the same index or mix handle and indexed consumption. The handle
   caches its position and last acquire-observed publication boundary.
-- A consumer callback receives `const Event&` and must be `noexcept`.
+- A consumer callback receives `const Event&`, must be `noexcept`, and must not
+  retain the reference after returning because its slot can then be reused.
 - A producer callback receives `Event&` and must be `noexcept`.
 - `try_publish` and `try_publish_batch` return `false` instead of blocking when
   the slowest consumer still owns a required slot.
