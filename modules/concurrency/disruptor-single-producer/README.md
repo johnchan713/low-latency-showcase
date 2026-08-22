@@ -30,12 +30,23 @@ cache-line-sized event from straddling two lines because of ordinary heap
 alignment.
 
 - One thread owns all publication calls.
+- Exactly one live publication path owns the producer state. Prefer one
+  `make_producer()` handle for a sustained producer hot loop; while it lives,
+  do not create another producer handle or call publication methods directly on
+  the disruptor. Destroying the handle synchronizes its cached cursor and
+  capacity state so direct publication or a later handle can resume.
+- Producer handles are move-only, remain owned by one producer thread, and must
+  not outlive the disruptor. Producer callbacks must not re-enter publication
+  or retain an `Event&` for later mutation; a handle callback must also not move
+  or destroy its handle. Debug builds assert the exclusive-publication and
+  callback-reentrancy rules.
 - One thread owns each consumer index.
 - Exactly one live consumption path owns each consumer index. Prefer one
   `make_consumer<Index>()` handle per consumer thread; do not create multiple
   handles for the same index or mix handle and indexed consumption. The handle
   caches its position and last acquire-observed publication boundary.
-- A consumer callback receives `const Event&` and must be `noexcept`.
+- A consumer callback receives `const Event&`, must be `noexcept`, and must not
+  retain the reference after returning because its slot can then be reused.
 - A producer callback receives `Event&` and must be `noexcept`.
 - `try_publish` and `try_publish_batch` return `false` instead of blocking when
   the slowest consumer still owns a required slot.
@@ -80,6 +91,27 @@ benchmarks with the `benchmark-native` preset; results are environment-sensitive
 and are intentionally not latency-threshold CTest tests.
 
 ## Benchmarks
+
+The latest same-host A/B audit compares the preferred producer session and
+two-span physical traversal against the prior direct producer/per-event-mask
+path. On the pinned Intel Xeon Platinum 8370C host, all six throughput
+confidence intervals excluded parity:
+
+| Producer / drain | Base median | Optimized median | Paired gain (95% CI) |
+|---|---:|---:|---:|
+| 1 / 1 | 80M/s | 216M/s | 2.70× (1.69–4.30) |
+| 1 / 65,536 | 61M/s | 137M/s | 2.17× (1.24–3.81) |
+| 16 / 16 | 677M/s | 908M/s | 1.35× (1.29–1.40) |
+| 16 / 65,536 | 864M/s | 1.32B/s | 1.46× (1.24–1.71) |
+| 64 / 64 | 962M/s | 1.43B/s | 1.53× (1.39–1.69) |
+| 64 / 65,536 | 924M/s | 1.46B/s | 1.54× (1.40–1.69) |
+
+All measured latency medians also decreased (p50 143→140 ns, p99 265→221 ns,
+p99.9 509→348 ns), but their confidence intervals crossed parity, so latency
+remains statistically unresolved rather than a proven improvement. The
+[complete paired audit](../../../benchmarks/comparisons/disruptor/README.md#producer-session-optimization-ab-2026-08-22)
+records methodology, order effects, code-size cost, exact summaries, and binary
+hashes.
 
 Build and run the native benchmark executables:
 
