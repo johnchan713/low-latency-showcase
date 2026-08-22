@@ -139,84 +139,77 @@ The audited candidate binaries had SHA-256
 `6b34ae5d606eecfcfb78408bf65af621145422ee0155294df34b9863795a8a49`
 (latency).
 
-## Audited completion-throughput pass: 2026-08-21
+## Current C++ / Java completion-throughput audit: 2026-08-22
 
-The final pass used GCC 13.3.0, OpenJDK 17.0.19, and two individually pinned
-physical cores on an AMD EPYC 9V74 development VM. All 112 measured rows passed
-count, sequence, value, checksum, and affinity checks; the locked dependency
-was verified for each run. Each configuration has seven alternating-order pairs
-(a 4/3 split, with the extra first-language assignment alternated across
-configurations), two 100-million-event warm-ups per process, and a minimum
-accepted measured duration of one second.
-[`audited-results-20260821.csv`](audited-results-20260821.csv) preserves the
-exact summary values below in machine-readable form. The language columns are
-seven-run medians; the ratio and confidence interval are calculated from the
-seven within-pair ratios and are not the quotient of the displayed medians.
+This pass measures the current producer-session/two-span C++ path from source
+tree `baed301bd82f5aec2a1edf29b15f33260ad566c5`. It used GCC 13.3.0,
+OpenJDK 17.0.19, LMAX Disruptor 4.0.0, and CPUs 2 and 4 on one Intel Xeon
+Platinum 8370C host. The C++ throughput binary SHA-256 was
+`9655e049a713c9573eb6b919d1b67b23c4226c129880ed968f8b1e9c5f99f283`.
 
-Primary nonblocking-claim comparison:
+The primary and blocking-sensitivity runs each produced 84 rows. All 168 rows
+passed exact affinity, event-count, sequence, value, checksum, dependency, and
+minimum-duration validation. Every configuration used seven alternating-order
+pairs, two 100-million-event warm-ups per process, and two billion measured
+events. The extra first-language assignment alternated across the six
+configurations. [`audited-results-20260822.csv`](audited-results-20260822.csv)
+preserves the exact runner summaries.
+
+Primary workload-matched nonblocking comparison:
 
 | `P` | `D` | C++ median | Java `tryNext` median | Paired geometric ratio (95% CI) | Order effect |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 1 | 186M/s | 97M/s | 2.20× (1.68–2.87) | 0.927 |
-| 1 | 65,536 | 181M/s | 110M/s | 1.62× (1.30–2.02) | 1.318 |
-| 16 | 16 | 742M/s | 275M/s | 2.85× (2.47–3.29) | 1.083 |
-| 16 | 65,536 | 927M/s | 379M/s | 2.37× (1.82–3.09) | 1.155 |
+| 1 | 1 | 213M/s | 44.5M/s | 4.96× (4.37–5.63) | 1.047 |
+| 1 | 65,536 | 165M/s | 67.0M/s | 2.09× (1.25–3.50) | 1.528 |
+| 16 | 16 | 873M/s | 117M/s | 7.43× (7.01–7.88) | 1.016 |
+| 16 | 65,536 | 1.47B/s | 224M/s | 6.49× (6.04–6.97) | 0.983 |
+| 64 | 64 | 1.60B/s | 181M/s | 8.95× (7.82–10.24) | 1.059 |
+| 64 | 65,536 | 1.60B/s | 261M/s | 6.07× (5.61–6.57) | 1.034 |
 
 Java blocking-claim sensitivity:
 
 | `P` | `D` | C++ median | Java `next` median | Paired geometric ratio (95% CI) | Order effect |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 1 | 189M/s | 100M/s | 1.89× (1.70–2.10) | 0.988 |
-| 1 | 65,536 | 205M/s | 136M/s | 1.47× (1.15–1.88) | 0.718 |
-| 16 | 16 | 670M/s | 274M/s | 2.44× (1.60–3.71) | 0.846 |
-| 16 | 65,536 | 748M/s | 428M/s | 1.66× (1.06–2.61) | 0.792 |
+| 1 | 1 | 212M/s | 59.4M/s | 3.62× (3.22–4.06) | 0.958 |
+| 1 | 65,536 | 154M/s | 71.2M/s | 1.89× (1.41–2.53) | 0.800 |
+| 16 | 16 | 942M/s | 160M/s | 5.96× (5.34–6.64) | 0.935 |
+| 16 | 65,536 | 1.47B/s | 230M/s | 6.74× (5.76–7.89) | 0.961 |
+| 64 | 64 | 1.57B/s | 204M/s | 6.84× (5.48–8.53) | 1.329 |
+| 64 | 65,536 | 1.47B/s | 238M/s | 6.12× (5.06–7.42) | 1.099 |
 
-The order effect is the geometric-mean C++ / Java ratio in C++-first pairs
-divided by the corresponding ratio in Java-first pairs. A value of 1.0 is
-ideal; values outside 0.95–1.05 flag shared-VM drift. The lower confidence bound
-remains above parity in all eight cases, but the flagged order effects are why
-these are qualified same-machine results rather than a universal ranking.
-Batch-1 phases used one billion measured events. The initial one-billion-event
-batch-16 C++ phases completed in under one second and were therefore rejected;
-the reported batch-16 phases use two billion events.
+Every individual lower 95% confidence bound exceeds both parity and 1.05 in
+these twelve modes. These are separate per-mode intervals, not a
+multiple-comparison-adjusted family-wide guarantee. Two primary and four
+blocking-sensitivity order effects fall outside the predeclared 0.95–1.05 band.
+The pinned shared VM therefore still shows drift; these are same-host
+implementation results, not a universal language ranking. The blocking table
+remains a sensitivity because Java `next(P)` blocks internally while C++
+returns `false` for caller-side retry.
 
-The four audited invocations were:
+Reproduce both passes with fresh output directories:
 
 ```bash
 benchmarks/comparisons/disruptor/run_paired.py \
   --producer-cpu 2 --consumer-cpu 4 \
-  --producer-batches 1 --families strict opportunistic \
-  --events 1000000000 --warmup-events 100000000 --warmup-runs 2 \
-  --samples 7 --minimum-duration-ms 1000 \
-  --java-claim-policy try-next \
-  --output-dir /tmp/lls-final-try-p1-both-20260821
-
-benchmarks/comparisons/disruptor/run_paired.py \
-  --producer-cpu 2 --consumer-cpu 4 \
-  --producer-batches 16 --families strict opportunistic \
+  --producer-batches 1 16 64 --families strict opportunistic \
   --events 2000000000 --warmup-events 100000000 --warmup-runs 2 \
   --samples 7 --minimum-duration-ms 1000 \
   --java-claim-policy try-next \
-  --output-dir /tmp/lls-final-try-p16-both-20260821
+  --output-dir /tmp/lls-latest-java-try
 
 benchmarks/comparisons/disruptor/run_paired.py \
   --producer-cpu 2 --consumer-cpu 4 \
-  --producer-batches 1 --families strict opportunistic \
-  --events 1000000000 --warmup-events 100000000 --warmup-runs 2 \
-  --samples 7 --minimum-duration-ms 1000 \
-  --java-claim-policy blocking-next \
-  --output-dir /tmp/lls-final-blocking-p1-both-20260821
-
-benchmarks/comparisons/disruptor/run_paired.py \
-  --producer-cpu 2 --consumer-cpu 4 \
-  --producer-batches 16 --families strict opportunistic \
+  --producer-batches 1 16 64 --families strict opportunistic \
   --events 2000000000 --warmup-events 100000000 --warmup-runs 2 \
   --samples 7 --minimum-duration-ms 1000 \
   --java-claim-policy blocking-next \
-  --output-dir /tmp/lls-final-blocking-p16-both-20260821
+  --output-dir /tmp/lls-latest-java-blocking
 ```
 
-Choose two equivalent permitted physical cores on another host and a fresh `--output-dir`; an existing directory is rejected deliberately.
+The 2026-08-21 AMD summaries remain tracked as historical evidence, but they
+measure the pre-producer-session C++ path and are not the current comparison.
+Choose two equivalent permitted physical cores on another host and a fresh
+`--output-dir`; an existing directory is rejected deliberately.
 
 ## Workload-matched handoff latency
 
@@ -238,44 +231,48 @@ one-CPU affinity masks. The existing launcher also keeps JVM helpers and its
 own monitor off both hot cores.
 
 Each process retains the same ring and worker TIDs across 1,000,000 warm-up and
-1,000,000 measured events. Seven pairs alternate C++-first and Java-first
-order. Percentile index `floor((N - 1) * p)` is applied within each run; the
-table reports medians of the seven per-run percentiles rather than pooling
+2,000,000 measured events. Sixteen pairs use an exact 8/8 C++-first/Java-first
+balance. Percentile index `floor((N - 1) * p)` is applied within each run; the
+table reports medians of the sixteen per-run percentiles rather than pooling
 samples across runs. C++ uses `std::chrono::steady_clock`, Java uses
 `System.nanoTime`, and no clock-read overhead is calibrated out; the differing
 clock APIs remain part of the implementation comparison. This is therefore a
 workload-matched implementation comparison, not a claim that the runtimes
 execute identical clock instructions.
 
-Audited shared-VM pass on CPUs 2 and 4, 2026-08-21:
+Current Intel Xeon Platinum 8370C pass on CPUs 2 and 4, 2026-08-22:
 
 | Percentile | C++ median | Java median | Paired C++ / Java geometric ratio (95% CI) | Order effect |
 |---:|---:|---:|---:|---:|
-| p50 | 75 ns | 95 ns | 0.640 (0.263–1.557) | 1.591 |
-| p90 | 95 ns | 140 ns | 0.678 (0.289–1.593) | 0.976 |
-| p95 | 125 ns | 150 ns | 0.751 (0.321–1.755) | 1.192 |
-| p99 | 135 ns | 156 ns | 0.814 (0.355–1.864) | 0.998 |
-| p99.9 | 145 ns | 186 ns | 0.757 (0.310–1.846) | 1.043 |
-| maximum | 685,864 ns | 619,281 ns | 1.629 (0.602–4.407) | 0.394 |
+| p50 | 127 ns | 164 ns | 0.721 (0.589–0.882) | 0.890 |
+| p90 | 156 ns | 237 ns | 0.577 (0.413–0.806) | 1.110 |
+| p95 | 167 ns | 252 ns | 0.594 (0.419–0.842) | 1.079 |
+| p99 | 232 ns | 394 ns | 0.555 (0.387–0.797) | 1.130 |
+| p99.9 | 280 ns | 848 ns | 0.365 (0.193–0.692) | 1.262 |
+| maximum | 6,549,784 ns | 7,254,784 ns | 1.139 (0.549–2.367) | 1.352 |
 
 The paired ratio is `C++ latency / Java latency`, so lower than 1.0 favours
 C++ latency. The order effect is the geometric-mean ratio in C++-first pairs
 divided by the ratio in Java-first pairs; 1.0 means no observed order effect.
-p50, p95, and maximum order effects fall outside 0.95–1.05, and every
-confidence interval crosses parity. These are descriptive medians from an
-especially noisy shared-VM pass, not evidence of a statistically resolved
-latency lead or a universal latency ranking. The exact values are retained in
-[`audited-latency-results-20260821.csv`](audited-latency-results-20260821.csv).
-Undocumented historical Java p50/p99 values are not reproducible evidence and
-should not be kept in a comparison table.
+Every percentile interval from p50 through p99.9 lies below parity, so this pass
+supports a statistically resolved C++ latency advantage for this serialized
+workload on this host. Maximum latency remains unresolved. Every order-effect
+ratio is outside 0.95–1.05, so host/order sensitivity remains a material
+qualification despite the narrower paired intervals. The exact values are in
+[`audited-latency-results-20260822.csv`](audited-latency-results-20260822.csv).
+The latency binary SHA-256 was
+`6b34ae5d606eecfcfb78408bf65af621145422ee0155294df34b9863795a8a49`;
+all 32 rows passed affinity, count, checksum, exact-order, and positive-latency
+validation. The older 2026-08-21 file remains historical evidence for the
+pre-producer-session path.
 
 Reproduce the workload with:
 
 ```bash
 benchmarks/comparisons/disruptor/run_paired_latency.py \
   --producer-cpu 2 --consumer-cpu 4 \
-  --warmup-events 1000000 --events 1000000 --samples 7 \
-  --output-dir /tmp/lls-paired-latency-audit
+  --warmup-events 1000000 --events 2000000 --samples 16 \
+  --output-dir /tmp/lls-latest-java-latency
 ```
 
 Its output directory contains the exact compiled binary and Java classes,

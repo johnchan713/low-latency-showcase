@@ -1,0 +1,13 @@
+drain_family,producer_batch,drain_limit,cpp_claim_policy,java_claim_policy,samples,median_cpp_events_per_second,median_java_events_per_second,median_paired_cpp_over_java,geomean_paired_cpp_over_java,paired_ratio_95pct_ci_lower,paired_ratio_95pct_ci_upper,lower_ci_above_parity,lower_ci_above_1_05,cpp_first_samples,java_first_samples,order_effect_cpp_first_over_java_first,order_effect_within_5pct
+opportunistic,1,65536,try-publish-batch,try-next,7,165139179.214,67016912.252,2.388606,2.093946,1.252293,3.501265,true,true,3,4,1.527760,false
+opportunistic,16,65536,try-publish-batch,try-next,7,1466410966.338,223715455.174,6.407507,6.490959,6.043159,6.971942,true,true,3,4,0.983165,true
+opportunistic,64,65536,try-publish-batch,try-next,7,1603510149.140,260936823.703,6.286995,6.073237,5.610018,6.574703,true,true,3,4,1.034214,true
+strict,1,1,try-publish-batch,try-next,7,212813669.479,44455969.111,4.720110,4.958542,4.366271,5.631154,true,true,4,3,1.047163,true
+strict,16,16,try-publish-batch,try-next,7,873434224.545,117491978.266,7.264214,7.430482,7.007090,7.879457,true,true,4,3,1.016074,true
+strict,64,64,try-publish-batch,try-next,7,1601070411.634,180641796.507,8.402099,8.949815,7.822392,10.239732,true,true,4,3,1.058797,false
+opportunistic,1,65536,try-publish-batch,blocking-next,7,154072718.632,71187013.261,1.846118,1.886480,1.408040,2.527490,true,true,3,4,0.799822,false
+opportunistic,16,65536,try-publish-batch,blocking-next,7,1466429153.243,230460209.068,6.746884,6.742296,5.764089,7.886513,true,true,3,4,0.960849,true
+opportunistic,64,65536,try-publish-batch,blocking-next,7,1469098821.860,238187985.378,5.952336,6.124970,5.055825,7.420204,true,true,3,4,1.098651,false
+strict,1,1,try-publish-batch,blocking-next,7,212439868.734,59438982.427,3.745015,3.615316,3.218119,4.061538,true,true,4,3,0.957583,true
+strict,16,16,try-publish-batch,blocking-next,7,942174804.331,160384896.692,5.739657,5.956766,5.344345,6.639367,true,true,4,3,0.935079,false
+strict,64,64,try-publish-batch,blocking-next,7,1571987526.851,203538810.016,7.395135,6.838820,5.484929,8.526903,true,true,4,3,1.329068,false
