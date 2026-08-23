@@ -1,0 +1,7 @@
+metric,samples,median_cpp_ns,median_java_ns,median_paired_cpp_over_java,geomean_paired_cpp_over_java,paired_ratio_95pct_ci_lower,paired_ratio_95pct_ci_upper,upper_ci_below_parity,upper_ci_below_0_95,cpp_first_samples,java_first_samples,order_effect_cpp_first_over_java_first,order_effect_within_5pct
+p50_ns,7,75,95,0.833333,0.640003,0.263048,1.557147,false,false,4,3,1.590871,false
+p90_ns,7,95,140,0.678571,0.678463,0.288964,1.592976,false,false,4,3,0.975700,true
+p95_ns,7,125,150,0.685714,0.750928,0.321366,1.754675,false,false,4,3,1.191900,false
+p99_ns,7,135,156,0.897436,0.813711,0.355166,1.864273,false,false,4,3,0.997978,true
+p99_9_ns,7,145,186,0.755556,0.757025,0.310449,1.845990,false,false,4,3,1.042559,true
+max_ns,7,685864,619281,1.352474,1.629241,0.602307,4.407100,false,false,4,3,0.393899,false

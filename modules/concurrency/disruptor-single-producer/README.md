@@ -31,7 +31,9 @@ alignment.
 
 - One thread owns all publication calls.
 - One thread owns each consumer index.
-- Prefer one `make_consumer<Index>()` handle per consumer thread. The handle
+- Exactly one live consumption path owns each consumer index. Prefer one
+  `make_consumer<Index>()` handle per consumer thread; do not create multiple
+  handles for the same index or mix handle and indexed consumption. The handle
   caches its position and last acquire-observed publication boundary.
 - A consumer callback receives `const Event&` and must be `noexcept`.
 - A producer callback receives `Event&` and must be `noexcept`.

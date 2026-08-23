@@ -1,0 +1,5 @@
+# Audited runtime dependency for the Java comparator.
+disruptor.version=4.0.0
+disruptor.url=https://repo.maven.apache.org/maven2/com/lmax/disruptor/4.0.0/disruptor-4.0.0.jar
+disruptor.sha256=c2ba80841541272bc815bcadab910d2d716aa563eca15762450ab4c889440505
+disruptor.bytes=85721
