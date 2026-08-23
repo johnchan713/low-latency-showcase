@@ -4,47 +4,46 @@ Measured and documented C++ building blocks for latency-sensitive systems.
 
 ## C++ versus Java LMAX Disruptor 4
 
-The reproducible comparator now tests the C++ single-producer implementation
-directly against the official
-[Java LMAX Disruptor 4.0.0](https://github.com/LMAX-Exchange/disruptor). Both
-sides run the same logical workload. Within each comparator, both languages use
-individually pinned producer and consumer threads; throughput and latency use
-the separate lifecycle and sample policies below. `P` is the exact producer
-claim size; `D` is the consumer acknowledgement cap.
+The current producer-session/two-span C++ implementation was measured directly
+against the official
+[Java LMAX Disruptor 4.0.0](https://github.com/LMAX-Exchange/disruptor) on the
+same Intel Xeon Platinum 8370C host. Both languages use individually pinned
+producer and consumer threads. Throughput validates count, sequence, value,
+checksum, and affinity; latency validates count, sequence checksum, ordering,
+positive samples, and affinity. `P` is the exact producer claim size; `D` is
+the consumer acknowledgement cap.
 
 ### Completion throughput
 
-Within each throughput process, one 65,536-slot ring and the same worker threads
-are retained across two 100-million-event warm-ups and the measured phase.
-Seven alternating-order pairs (a 4/3 split, with the extra first-language
-assignment alternated across configurations) on the AMD EPYC development VM
-produced these workload-matched nonblocking-claim `try_publish_batch(P)` versus
-`tryNext(P)` results. Batch-1 phases contain one billion events and batch-16
-phases contain two billion, so every accepted interval exceeds one second.
-Rates cover the full phase: timing ends only when the producer observes the
-final consumer acknowledgement, not when publication finishes. The language
-columns are seven-run medians; ratios and confidence intervals come from the
-seven within-pair ratios, so the displayed ratio is not the quotient of the two
-medians.
+The primary workload matches C++ `try_publish_batch(P)` against Java
+`tryNext(P)`: both make an all-or-nothing nonblocking claim and retry at the
+caller. Each process retains one 65,536-slot ring and the same worker threads
+across two 100-million-event warm-ups and a two-billion-event measured phase.
+Seven pairs alternate which language runs first, and every accepted phase lasts
+at least one second. Rates cover publication through the producer's observation
+of the final consumer acknowledgement.
 
 | Workload | C++ median | Java median | Paired geometric C++ / Java (95% CI) | Order effect |
 |---|---:|---:|---:|---:|
-| `P=1, D=1` | **186M events/s** | 97M events/s | **2.20× (1.68–2.87)** | 0.927 |
-| `P=1, D=65,536` | **181M events/s** | 110M events/s | **1.62× (1.30–2.02)** | 1.318 |
-| `P=16, D=16` | **742M events/s** | 275M events/s | **2.85× (2.47–3.29)** | 1.083 |
-| `P=16, D=65,536` | **927M events/s** | 379M events/s | **2.37× (1.82–3.09)** | 1.155 |
+| `P=1, D=1` | **213M events/s** | 44.5M events/s | **4.96× (4.37–5.63)** | 1.047 |
+| `P=1, D=65,536` | **165M events/s** | 67.0M events/s | **2.09× (1.25–3.50)** | 1.528 |
+| `P=16, D=16` | **873M events/s** | 117M events/s | **7.43× (7.01–7.88)** | 1.016 |
+| `P=16, D=65,536` | **1.47B events/s** | 224M events/s | **6.49× (6.04–6.97)** | 0.983 |
+| `P=64, D=64` | **1.60B events/s** | 181M events/s | **8.95× (7.82–10.24)** | 1.059 |
+| `P=64, D=65,536` | **1.60B events/s** | 261M events/s | **6.07× (5.61–6.57)** | 1.034 |
 
 Java's idiomatic blocking `next(P)` was also run as a separately labelled
-sensitivity. The paired geometric mean favoured C++ in all four configurations,
-and every lower 95% confidence bound exceeded 1.0; the narrowest was 1.06× for
-`P=16, D=65,536`. This is not presented as the workload-matched result because
-the Java claim blocks internally while the C++ API is nonblocking.
+sensitivity across the same six modes. Its paired ratios ranged from 1.89× to
+6.84× and every individual lower confidence bound exceeded parity. It is not
+the workload-matched headline because Java blocks inside `next(P)` while the
+C++ API returns failure for caller-side retry.
 
-Across these eight throughput configurations, every lower confidence bound
-exceeded 1.0, but seven order-effect ratios fell outside the predeclared
-0.95–1.05 diagnostic band. The shared VM still has measurable drift, so these
-are qualified same-machine results, not a universal language ranking. See the
-tracked
+All 168 throughput rows passed validation. Every one of the twelve individual
+per-mode confidence intervals excluded parity, but these are not a
+multiple-comparison-adjusted family-wide guarantee. Two primary and four
+blocking-sensitivity order effects fell outside the predeclared 0.95–1.05 band,
+so the results remain qualified same-host observations rather than a universal
+runtime ranking. See the tracked
 [paired benchmark, raw-output schema, and exact reproduction commands](benchmarks/comparisons/disruptor/README.md).
 
 ### Batch-1 handoff latency
@@ -53,28 +52,27 @@ A separate serialized `P=1, D=1` workload measures each event from the
 post-claim producer timestamp to the consumer handler-entry timestamp. The
 producer waits for that event's released consumer sequence before claiming the
 next event, preventing backlog behind earlier events from inflating the
-distribution. Seven alternating-order pairs each use 1,000,000 warm-up and
-1,000,000 measured events.
+distribution. Sixteen exactly balanced pairs each use 1,000,000 warm-up and
+2,000,000 measured events.
 
 | Percentile | C++ median | Java median | Paired geometric C++ / Java (95% CI; lower is better) | Order effect |
 |---:|---:|---:|---:|---:|
-| p50 | 75 ns | 95 ns | 0.640 (0.263–1.557) | 1.591 |
-| p99 | 135 ns | 156 ns | 0.814 (0.355–1.864) | 0.998 |
-| p99.9 | 145 ns | 186 ns | 0.757 (0.310–1.846) | 1.043 |
+| p50 | **127 ns** | 164 ns | **0.721 (0.589–0.882)** | 0.890 |
+| p99 | **232 ns** | 394 ns | **0.555 (0.387–0.797)** | 1.130 |
+| p99.9 | **280 ns** | 848 ns | **0.365 (0.193–0.692)** | 1.262 |
 
-The language columns are medians of seven per-run percentiles. Each pair yields
-a C++ / Java ratio; the table reports their geometric mean and a log-space
-Student-t 95% confidence interval across the seven ratios, so it is not the
-quotient of the displayed medians. C++ has the lower median at p50, p90, p95,
-p99, and p99.9, but every confidence interval crosses parity, and the p50 order
-effect is large. This final-source pass therefore does not establish a
-cross-language latency win. The comparator report preserves p90, p95, maximum,
-and full methodological qualifications alongside these headline percentiles.
+The five measured percentile intervals from p50 through p99.9 remain below
+parity, so this pass supports a statistically resolved C++ latency advantage
+for this workload on this host. Maximum latency remains unresolved, and every
+percentile order effect falls outside the 0.95–1.05 diagnostic band; this is
+not a portable guarantee. The comparator report preserves p90, p95, maximum,
+the exact summary, and full qualifications.
 
-This comparison work does not modify `disruptor_single_producer.hpp`; it adds
-benchmark infrastructure, documentation, and boundary tests, with no
-production hot-path change. Correctness, sanitizer, and native frontier checks
-passed on the tested worktree.
+This audit measures the current module's producer-session and two-span hot
+paths. The benchmarked source tree was clean, both native binaries
+were identical to the independently audited candidate binaries, and all
+correctness, sanitizer, rollover, multicast, and concurrency checks remained
+green.
 
 The project does not claim that a technique is universally fastest. Hardware,
 contention, workload shape, operating-system behaviour, compiler output, and
@@ -82,16 +80,18 @@ acceptable trade-offs determine whether an optimization helps. Each accepted
 technique must therefore include a baseline, reproducible measurements, and an
 explicit **use when / avoid when** explanation.
 
-## Performance at a glance
+## Historical module microbenchmarks
 
 The first capsule moves small batched events at **hundreds of millions per
 second** while keeping an unbatched producer-to-consumer handoff in the **tens
 to low hundreds of nanoseconds**.
 
-Representative results from the shared AMD EPYC development VM, using GCC 13,
-`-O3`, LTO, native CPU tuning, pinned producer/consumer threads, exact sequence
-validation, and full-payload checks. These are five-run medians; the shared VM
-has substantial scheduling dispersion.
+These earlier results come from the shared AMD EPYC development VM and predate
+the current producer-session optimization. They use GCC 13, `-O3`, LTO, native
+CPU tuning, pinned producer/consumer threads, exact sequence validation, and
+full-payload checks. They remain useful for workload-shape comparisons, not as
+the current C++/Java headline. Values are five-run medians; the shared VM has
+substantial scheduling dispersion.
 
 | Disruptor workload | Throughput | Handoff p50 | Handoff p99 |
 |---|---:|---:|---:|
@@ -109,9 +109,9 @@ The 64-byte cases now write and verify all 64 bytes. Earlier figures that only
 touched the first word were faster but represented cache-line stride rather
 than complete payload processing.
 
-### Latest optimization delta
+### Earlier consumer-handle optimization delta
 
-The latest pass improves fixed-index consumption without weakening the
+An earlier pass improved fixed-index consumption without weakening the
 release/acquire synchronization contract:
 
 | Targeted path | Previous | Optimized | Change |

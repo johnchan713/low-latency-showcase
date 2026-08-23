@@ -1,0 +1,7 @@
+date,cpu,cxx_runtime,base_revision,candidate_revision,metric,samples,warmup_events,measured_events,median_base_ns,median_candidate_ns,geomean_paired_candidate_over_base,paired_ratio_95pct_ci_lower,paired_ratio_95pct_ci_upper,upper_ci_below_parity,pair_wins,order_effect_base_first_over_candidate_first,order_effect_within_5pct
+2026-08-22,Intel Xeon Platinum 8370C,GCC 13.3.0,165eda81,branch-implementation-commit,p50_ns,15,1000000,2000000,143,140,0.857920,0.608762,1.209054,false,9,0.640761,false
+2026-08-22,Intel Xeon Platinum 8370C,GCC 13.3.0,165eda81,branch-implementation-commit,p90_ns,15,1000000,2000000,170,159,0.918039,0.651930,1.292771,false,10,0.972013,true
+2026-08-22,Intel Xeon Platinum 8370C,GCC 13.3.0,165eda81,branch-implementation-commit,p95_ns,15,1000000,2000000,186,164,0.853769,0.602894,1.209037,false,11,0.855673,false
+2026-08-22,Intel Xeon Platinum 8370C,GCC 13.3.0,165eda81,branch-implementation-commit,p99_ns,15,1000000,2000000,265,221,0.854560,0.575958,1.267926,false,8,0.734485,false
+2026-08-22,Intel Xeon Platinum 8370C,GCC 13.3.0,165eda81,branch-implementation-commit,p99_9_ns,15,1000000,2000000,509,348,0.603483,0.339903,1.071456,false,11,0.884138,false
+2026-08-22,Intel Xeon Platinum 8370C,GCC 13.3.0,165eda81,branch-implementation-commit,max_ns,15,1000000,2000000,6124099,4241939,0.754524,0.289294,1.967917,false,9,3.050970,false

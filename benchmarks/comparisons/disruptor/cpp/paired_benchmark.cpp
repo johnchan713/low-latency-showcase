@@ -330,6 +330,7 @@ template <std::size_t ProducerBatch, std::size_t DrainLimit>
     // the same producer NUMA locality in every implementation.
     static_cast<void>(pin_and_verify_current_thread(settings.producer_cpu));
     stream_type stream;
+    auto producer = stream.make_producer();
     run_control control;
     std::exception_ptr consumer_error;
     const auto total_phases = settings.warmup_runs + 1;
@@ -410,7 +411,7 @@ template <std::size_t ProducerBatch, std::size_t DrainLimit>
                                                 std::size_t index) noexcept {
                     output.value = published + index;
                 };
-                while (!stream.try_publish_batch(ProducerBatch, writer)) {
+                while (!producer.try_publish_batch(ProducerBatch, writer)) {
                     if (control.failed.load(std::memory_order_acquire)) {
                         std::rethrow_exception(consumer_error);
                     }

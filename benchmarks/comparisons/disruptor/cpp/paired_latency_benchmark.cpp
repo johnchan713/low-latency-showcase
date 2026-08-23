@@ -287,6 +287,7 @@ inline void spin_pause() noexcept {
     static_cast<void>(pthread_setname_np(pthread_self(), "lls-producer"));
     static_cast<void>(pin_and_verify_current_thread(settings.producer_cpu));
     stream_type stream;
+    auto producer = stream.make_producer();
     const auto total = settings.warmup_events + settings.events;
     std::vector<std::int64_t> samples(static_cast<std::size_t>(total));
     std::atomic<bool> ready{false};
@@ -347,7 +348,7 @@ inline void spin_pause() noexcept {
                 // writer, so this timestamp excludes capacity-claim retries.
                 output.published_ns = steady_now_ns();
             };
-            while (!stream.try_publish_batch(1, writer)) {
+            while (!producer.try_publish_batch(1, writer)) {
                 if (failed.load(std::memory_order_acquire)) {
                     std::rethrow_exception(consumer_error);
                 }

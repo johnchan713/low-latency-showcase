@@ -9,6 +9,7 @@
 #include <new>
 #include <limits>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -38,10 +39,20 @@ struct cache_line_event final {
     std::array<std::byte, 64> payload{};
 };
 
+struct multiword_event final {
+    std::array<std::uint64_t, 8> words{};
+};
+
 static_assert(sizeof(cache_line_event) == 64);
 
 using small_disruptor =
     lls::concurrency::single_producer_disruptor<event, 4, 2>;
+
+static_assert(!std::is_copy_constructible_v<small_disruptor::producer_handle>);
+static_assert(!std::is_copy_assignable_v<small_disruptor::producer_handle>);
+static_assert(
+    std::is_nothrow_move_constructible_v<small_disruptor::producer_handle>);
+static_assert(!std::is_move_assignable_v<small_disruptor::producer_handle>);
 
 [[nodiscard]] bool basic_contract_test() {
     small_disruptor disruptor;
@@ -666,6 +677,401 @@ using small_disruptor =
            consumer.position() == 1;
 }
 
+[[nodiscard]] bool producer_handle_boundaries_and_resumption_test() {
+    using disruptor_type =
+        lls::concurrency::single_producer_disruptor<event, 4, 1>;
+    constexpr std::uint64_t initial_position = 7;
+    disruptor_type disruptor{initial_position};
+    std::size_t writer_calls = 0;
+    {
+        auto producer = disruptor.make_producer();
+        const auto writer = [&writer_calls](event& output,
+                                             std::size_t index) noexcept {
+            ++writer_calls;
+            output.value = initial_position + index;
+        };
+        if (!producer.try_publish_batch(0, writer) || writer_calls != 0 ||
+            producer.position() != initial_position ||
+            producer.try_publish_batch(5, writer) || writer_calls != 0 ||
+            !producer.try_publish_batch(2, writer) || writer_calls != 2 ||
+            producer.position() != initial_position + 2 ||
+            disruptor.published_position() != initial_position + 2) {
+            return false;
+        }
+    }
+
+    std::uint64_t expected = initial_position;
+    if (disruptor.consume_available(
+            0,
+            2,
+            [&expected](const event& input, std::uint64_t sequence) noexcept {
+                if (input.value == expected && sequence == expected) {
+                    ++expected;
+                }
+            }) != 2 ||
+        expected != initial_position + 2 ||
+        !disruptor.try_publish([](event& output) noexcept {
+            output.value = initial_position + 2;
+        })) {
+        return false;
+    }
+    {
+        auto producer = disruptor.make_producer();
+        if (producer.position() != initial_position + 3 ||
+            !producer.try_publish([](event& output) noexcept {
+                output.value = initial_position + 3;
+            }) ||
+            disruptor.published_position() != initial_position + 4) {
+            return false;
+        }
+    }
+
+    expected = initial_position + 2;
+    return disruptor.consume_available(
+               0,
+               2,
+               [&expected](const event& input,
+                           std::uint64_t sequence) noexcept {
+                   if (input.value == expected && sequence == expected) {
+                       ++expected;
+                   }
+               }) == 2 &&
+           expected == initial_position + 4 &&
+           disruptor.consumer_position(0) == initial_position + 4;
+}
+
+[[nodiscard]] bool moved_producer_handle_capacity_one_rollover_test() {
+    using disruptor_type =
+        lls::concurrency::single_producer_disruptor<event, 1, 1>;
+    constexpr auto initial =
+        std::numeric_limits<disruptor_type::sequence_type>::max();
+    disruptor_type disruptor{initial};
+    auto original = disruptor.make_producer();
+    auto producer = std::move(original);
+    auto consumer = disruptor.make_consumer<0>();
+
+    if (!producer.try_publish(
+            [](event& output) noexcept { output.value = initial; }) ||
+        producer.try_publish(
+            [](event& output) noexcept { output.value = 0; })) {
+        return false;
+    }
+    std::uint64_t observed = 0;
+    if (!consumer.try_consume(
+            [&observed](const event& input) noexcept {
+                observed = input.value;
+            }) ||
+        observed != initial ||
+        !producer.try_publish(
+            [](event& output) noexcept { output.value = 0; })) {
+        return false;
+    }
+    return producer.position() == 1 && disruptor.published_position() == 1;
+}
+
+[[nodiscard]] bool producer_session_rollover_resumption_test() {
+    using disruptor_type =
+        lls::concurrency::single_producer_disruptor<event, 2, 1>;
+    constexpr auto initial =
+        std::numeric_limits<disruptor_type::sequence_type>::max() - 1;
+    disruptor_type disruptor{initial};
+
+    {
+        auto producer = disruptor.make_producer();
+        if (!producer.try_publish_batch(
+                2,
+                [](event& output, std::size_t index) noexcept {
+                    output.value = initial + index;
+                }) ||
+            producer.position() != 0) {
+            return false;
+        }
+    }
+
+    auto expected = initial;
+    const auto verify = [&expected](const event& input,
+                                    std::uint64_t sequence) noexcept {
+        if (input.value == expected && sequence == expected) {
+            ++expected;
+        }
+    };
+    if (disruptor.consume_available(0, 2, verify) != 2 || expected != 0 ||
+        !disruptor.try_publish([](event& output) noexcept {
+            output.value = 0;
+        }) ||
+        disruptor.consume_available(0, 1, verify) != 1 || expected != 1) {
+        return false;
+    }
+
+    {
+        auto producer = disruptor.make_producer();
+        if (producer.position() != 1 ||
+            !producer.try_publish(
+                [](event& output) noexcept { output.value = 1; })) {
+            return false;
+        }
+    }
+
+    return disruptor.consume_available(0, 1, verify) == 1 && expected == 2 &&
+           disruptor.published_position() == 2 &&
+           disruptor.consumer_position(0) == 2;
+}
+
+[[nodiscard]] bool producer_handle_slowest_consumer_switch_test() {
+    using disruptor_type =
+        lls::concurrency::single_producer_disruptor<event, 4, 2>;
+    disruptor_type disruptor;
+    auto producer = disruptor.make_producer();
+    std::array<std::uint64_t, 2> expected{};
+    const auto consume = [&](std::size_t consumer,
+                             std::size_t count) noexcept {
+        return disruptor.consume_available(
+            consumer,
+            count,
+            [&](const event& input, std::uint64_t sequence) noexcept {
+                if (input.value == expected[consumer] &&
+                    sequence == expected[consumer]) {
+                    ++expected[consumer];
+                }
+            });
+    };
+    const auto publish = [&producer](std::uint64_t first,
+                                     std::size_t count) noexcept {
+        return producer.try_publish_batch(
+            count,
+            [first](event& output, std::size_t index) noexcept {
+                output.value = first + index;
+            });
+    };
+
+    if (!publish(0, 4) || consume(1, 4) != 4 || publish(4, 1) ||
+        consume(0, 1) != 1 || !publish(4, 1) || consume(0, 4) != 4 ||
+        !publish(5, 3) || publish(8, 1) ||
+        consume(1, 4) != 4 || !publish(8, 1) || consume(0, 4) != 4 ||
+        consume(1, 1) != 1) {
+        return false;
+    }
+
+    return expected[0] == 9 && expected[1] == 9 &&
+           producer.position() == 9 && disruptor.published_position() == 9 &&
+           disruptor.consumer_position(0) == 9 &&
+           disruptor.consumer_position(1) == 9;
+}
+
+[[nodiscard]] bool concurrent_multiword_producer_handle_test() {
+    constexpr std::size_t capacity = 64;
+    constexpr std::uint64_t event_count = 250'000;
+    using disruptor_type = lls::concurrency::single_producer_disruptor<
+        multiword_event,
+        capacity,
+        1>;
+    constexpr auto initial_position =
+        std::numeric_limits<disruptor_type::sequence_type>::max() - 31;
+    disruptor_type disruptor{initial_position};
+    std::atomic<bool> ready{false};
+    std::atomic<bool> correct{true};
+
+    std::thread consumer([&] {
+        auto handle = disruptor.make_consumer<0>();
+        ready.store(true, std::memory_order_release);
+        std::uint64_t expected = 0;
+        while (expected < event_count) {
+            const auto consumed = handle.consume_available(
+                32,
+                [&](const multiword_event& input,
+                    std::uint64_t sequence) noexcept {
+                    if (sequence != initial_position + expected) {
+                        correct.store(false, std::memory_order_relaxed);
+                    }
+                    for (std::size_t word = 0; word < input.words.size();
+                         ++word) {
+                        const auto expected_word =
+                            expected * 0x9e3779b97f4a7c15ULL + word;
+                        if (input.words[word] != expected_word) {
+                            correct.store(false, std::memory_order_relaxed);
+                        }
+                    }
+                    ++expected;
+                });
+            if (consumed == 0) {
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    while (!ready.load(std::memory_order_acquire)) {
+    }
+    {
+        auto producer = disruptor.make_producer();
+        constexpr std::array<std::size_t, 4> batches{1, 7, 32, 3};
+        std::uint64_t published = 0;
+        std::size_t batch_index = 0;
+        while (published < event_count) {
+            const auto remaining = event_count - published;
+            const auto requested = batches[batch_index];
+            const auto count = static_cast<std::size_t>(
+                remaining < requested ? remaining : requested);
+            if (producer.try_publish_batch(
+                    count,
+                    [published](multiword_event& output,
+                                std::size_t index) noexcept {
+                        const auto value = published + index;
+                        for (std::size_t word = 0; word < output.words.size();
+                             ++word) {
+                            output.words[word] =
+                                value * 0x9e3779b97f4a7c15ULL + word;
+                        }
+                    })) {
+                published += count;
+                batch_index = (batch_index + 1) % batches.size();
+            } else {
+                std::this_thread::yield();
+            }
+        }
+    }
+    consumer.join();
+
+    const auto final_position = initial_position + event_count;
+    return correct.load(std::memory_order_relaxed) &&
+           disruptor.published_position() == final_position &&
+           disruptor.consumer_position(0) == final_position;
+}
+
+[[nodiscard]] bool concurrent_producer_handle_multicast_rollover_test() {
+    constexpr std::size_t capacity = 8;
+    constexpr std::size_t consumer_count = 3;
+    constexpr std::uint64_t event_count = 100'000;
+    using disruptor_type = lls::concurrency::single_producer_disruptor<
+        event,
+        capacity,
+        consumer_count>;
+    constexpr auto initial_position =
+        std::numeric_limits<disruptor_type::sequence_type>::max() - 5;
+    disruptor_type disruptor{initial_position};
+    auto producer_handle = disruptor.make_producer();
+    std::atomic<bool> start{false};
+    std::atomic<bool> release_slow_consumer{false};
+    std::atomic<std::size_t> ready{0};
+    std::atomic<bool> correct{true};
+    std::array<std::uint64_t, consumer_count> sums{};
+    std::array<std::thread, consumer_count> consumers;
+
+    consumers[0] = std::thread([&] {
+        auto consumer = disruptor.make_consumer<0>();
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+        }
+        while (!release_slow_consumer.load(std::memory_order_acquire)) {
+        }
+        std::uint64_t expected = 0;
+        while (expected < event_count) {
+            const auto count = consumer.consume_available(
+                1,
+                [&](const event& input, std::uint64_t sequence) noexcept {
+                    if (input.value != expected ||
+                        sequence != initial_position + expected) {
+                        correct.store(false, std::memory_order_relaxed);
+                    }
+                    sums[0] += input.value;
+                    ++expected;
+                });
+            if (count == 0) {
+                std::this_thread::yield();
+            }
+        }
+    });
+    consumers[1] = std::thread([&] {
+        auto consumer = disruptor.make_consumer<1>();
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+        }
+        std::uint64_t expected = 0;
+        while (expected < event_count) {
+            const auto count = consumer.consume_available(
+                3,
+                [&](const event& input, std::uint64_t sequence) noexcept {
+                    if (input.value != expected ||
+                        sequence != initial_position + expected) {
+                        correct.store(false, std::memory_order_relaxed);
+                    }
+                    sums[1] += input.value;
+                    ++expected;
+                });
+            if (count == 0) {
+                std::this_thread::yield();
+            }
+        }
+    });
+    consumers[2] = std::thread([&] {
+        auto consumer = disruptor.make_consumer<2>();
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+        }
+        std::uint64_t expected = 0;
+        while (expected < event_count) {
+            const auto count = consumer.consume_available(
+                7,
+                [&](const event& input, std::uint64_t sequence) noexcept {
+                    if (input.value != expected ||
+                        sequence != initial_position + expected) {
+                        correct.store(false, std::memory_order_relaxed);
+                    }
+                    sums[2] += input.value;
+                    ++expected;
+                });
+            if (count == 0) {
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    std::uint64_t rejected = 0;
+    std::thread producer(
+        [&, handle = std::move(producer_handle)]() mutable {
+            while (ready.load(std::memory_order_acquire) != consumer_count) {
+            }
+            start.store(true, std::memory_order_release);
+            constexpr std::array<std::size_t, 4> batches{1, 4, 2, 3};
+            std::uint64_t published = 0;
+            std::size_t batch_index = 0;
+            while (published < event_count) {
+                const auto requested = batches[batch_index];
+                const auto remaining = event_count - published;
+                const auto count = static_cast<std::size_t>(
+                    remaining < requested ? remaining : requested);
+                if (handle.try_publish_batch(
+                        count,
+                        [published](event& output,
+                                    std::size_t index) noexcept {
+                            output.value = published + index;
+                        })) {
+                    published += count;
+                    batch_index = (batch_index + 1) % batches.size();
+                } else {
+                    ++rejected;
+                    release_slow_consumer.store(true,
+                                                std::memory_order_release);
+                    std::this_thread::yield();
+                }
+            }
+        });
+
+    producer.join();
+    for (auto& consumer : consumers) {
+        consumer.join();
+    }
+
+    const auto expected_sum = (event_count - 1) * event_count / 2;
+    const auto final_position = initial_position + event_count;
+    return rejected > 0 && correct.load(std::memory_order_relaxed) &&
+           sums[0] == expected_sum && sums[1] == expected_sum &&
+           sums[2] == expected_sum &&
+           disruptor.published_position() == final_position &&
+           disruptor.consumer_position(0) == final_position &&
+           disruptor.consumer_position(1) == final_position &&
+           disruptor.consumer_position(2) == final_position;
+}
+
 }  // namespace
 
 int main() {
@@ -688,6 +1094,18 @@ int main() {
         {"concurrent handle multicast rollover",
          concurrent_handle_multicast_rollover_test},
         {"capacity one rollover", capacity_one_rollover_test},
+        {"producer handle boundaries and resumption",
+         producer_handle_boundaries_and_resumption_test},
+        {"moved producer handle capacity-one rollover",
+         moved_producer_handle_capacity_one_rollover_test},
+        {"producer session rollover resumption",
+         producer_session_rollover_resumption_test},
+        {"producer handle slowest consumer switch",
+         producer_handle_slowest_consumer_switch_test},
+        {"concurrent multiword producer handle",
+         concurrent_multiword_producer_handle_test},
+        {"concurrent producer handle multicast rollover",
+         concurrent_producer_handle_multicast_rollover_test},
     };
 
     for (const auto& [name, test] : tests) {

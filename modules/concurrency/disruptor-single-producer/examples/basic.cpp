@@ -57,11 +57,12 @@ int main() {
     });
 
     start.store(true, std::memory_order_release);
+    auto producer = stream.make_producer();
     std::uint64_t published = 0;
     while (published < event_count) {
         const auto remaining = event_count - published;
         const auto batch = static_cast<std::size_t>(remaining < 64 ? remaining : 64);
-        if (stream.try_publish_batch(
+        if (producer.try_publish_batch(
                 batch,
                 [published](market_event& event, std::size_t offset) noexcept {
                     event.order_id = published + offset;
