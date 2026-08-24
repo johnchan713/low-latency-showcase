@@ -2,7 +2,46 @@
 
 Measured and documented C++ building blocks for latency-sensitive systems.
 
-## C++ versus Java LMAX Disruptor 4
+## Headline results
+
+### 1. C++ Disruptor — up to 1.60 billion events/s
+
+On the same pinned Intel Xeon Platinum 8370C host, the paired geometric
+C++/Java completion-throughput ratios were **2.09×–8.95×** across six
+workload-matched modes, with the C++ median reaching **1.60 billion events/s**.
+In the separate single-in-flight handoff test, C++ measured **127 ns p50 and
+280 ns p99.9**, versus **164 ns and 848 ns** for the official Java LMAX
+Disruptor 4.0.0. These are qualified same-host workload results, not a universal
+C++-versus-Java ranking.
+
+[Disruptor implementation and benchmark evidence](benchmarks/comparisons/disruptor/README.md)
+
+### 2. Low-latency sockets — p50 RTT as low as 3.25 µs
+
+The audited Linux IPv4 loopback benchmark selected receive busy-spin for TCP
+and connected UDP with receive busy-spin for UDP:
+
+| Path and payload range | Baseline median p50 RTT | Selected median p50 RTT | Paired reduction |
+|---|---:|---:|---:|
+| TCP busy-spin, 8–1,400 bytes | 21.39–22.15 µs | **5.19–6.26 µs** | **71.9–75.8%** |
+| Connected UDP busy-spin, 8–1,400 bytes | 20.65–21.26 µs | **3.25–4.04 µs** | **81.0–84.3%** |
+
+Each payload/profile result represents 1.6 million measured attempts. All 128
+baseline/tuned confirmation rows passed full-payload, sequence, checksum,
+affinity, accounting, and anomaly validation. No UDP duplicate, reordered,
+invalid, or truncated message was observed, and the tuned UDP profile had zero
+deadline misses across 6.4 million attempts. The measured trade-off was
+approximately **200% process CPU** across the client and echo server.
+
+These are local-kernel loopback figures, not physical-NIC, one-way, or
+two-machine latency. The reusable capsule exposes the selected paths, while the
+figures remain attributed to the audited benchmark implementation that selected
+them.
+
+[Socket benchmark evidence](benchmarks/scenarios/socket-latency/README.md) ·
+[Reusable low-latency socket capsule](modules/networking/low-latency-sockets/)
+
+## Detailed C++ versus Java LMAX Disruptor 4 comparison
 
 The current producer-session/two-span C++ implementation was measured directly
 against the official
@@ -157,8 +196,14 @@ The repository is at its foundation stage. It provides:
 - an experimental single-producer multicast Disruptor capsule with correctness,
   sanitizer, throughput, and handoff-latency coverage;
 - explicit busy-spin, yield, and adaptive spin-wait policies for x86 polling;
-- dedicated locations for future test support, benchmark support, and
-  benchmark scenarios; and
+- a [validated Linux IPv4 loopback socket scenario](benchmarks/scenarios/socket-latency/)
+  with untuned controls, named low-latency profiles, and balanced comparison
+  tooling;
+- an experimental
+  [`low-latency-sockets`](modules/networking/low-latency-sockets/) capsule with
+  the selected TCP spin and connected-UDP spin primitives;
+- dedicated locations for test support, benchmark support, and benchmark
+  scenarios; and
 - scripts for recording system information and pinning a process to CPUs.
 
 The first reusable concurrency capsule is the

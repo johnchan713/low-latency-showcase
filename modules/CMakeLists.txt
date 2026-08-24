@@ -2,3 +2,4 @@
 # configuration deterministic and makes each new capsule visible in review.
 add_subdirectory(concurrency/spin-wait)
 add_subdirectory(concurrency/disruptor-single-producer)
+add_subdirectory(networking/low-latency-sockets)
