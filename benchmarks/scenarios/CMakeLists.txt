@@ -9,3 +9,5 @@ set_target_properties(
     lls_wait_strategy_benchmark
     PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/benchmarks"
 )
+
+add_subdirectory(socket-latency)
