@@ -10,7 +10,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <limits>
 #include <span>
 #include <system_error>
@@ -72,28 +71,102 @@ struct datagram_receive_result final {
     }
 };
 
+/// Allocation-free value-or-error result used by socket option helpers.
+///
+/// This deliberately exposes only the operations needed by this capsule. In
+/// particular, it avoids depending on std::expected, which is not available
+/// with every supported Clang and libstdc++ combination.
+template <typename Value>
+class socket_option_result final {
+public:
+    [[nodiscard]] static socket_option_result success(Value value) noexcept {
+        return socket_option_result{value, {}, true};
+    }
+
+    [[nodiscard]] static socket_option_result failure(
+        std::error_code error) noexcept {
+        return socket_option_result{{}, error, false};
+    }
+
+    [[nodiscard]] bool has_value() const noexcept { return has_value_; }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return has_value();
+    }
+
+    [[nodiscard]] const Value& operator*() const noexcept { return value_; }
+
+    [[nodiscard]] Value value_or(Value fallback) const noexcept {
+        return has_value() ? value_ : fallback;
+    }
+
+    [[nodiscard]] const std::error_code& error() const noexcept {
+        return error_;
+    }
+
+private:
+    socket_option_result(Value value,
+                         std::error_code error,
+                         bool has_value) noexcept
+        : value_(value), error_(error), has_value_(has_value) {}
+
+    Value value_{};
+    std::error_code error_{};
+    bool has_value_{};
+};
+
+template <>
+class socket_option_result<void> final {
+public:
+    [[nodiscard]] static socket_option_result success() noexcept {
+        return socket_option_result{true, {}};
+    }
+
+    [[nodiscard]] static socket_option_result failure(
+        std::error_code error) noexcept {
+        return socket_option_result{false, error};
+    }
+
+    [[nodiscard]] bool has_value() const noexcept { return has_value_; }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return has_value();
+    }
+
+    [[nodiscard]] const std::error_code& error() const noexcept {
+        return error_;
+    }
+
+private:
+    socket_option_result(bool has_value, std::error_code error) noexcept
+        : error_(error), has_value_(has_value) {}
+
+    std::error_code error_{};
+    bool has_value_{};
+};
+
 namespace detail {
 
 [[nodiscard]] inline std::error_code current_socket_error() noexcept {
     return {errno, std::generic_category()};
 }
 
-[[nodiscard]] inline std::expected<int, std::error_code>
+[[nodiscard]] inline socket_option_result<int>
 integer_socket_option(int descriptor, int level, int option_name) noexcept {
     int value{};
     socklen_t length = sizeof(value);
     if (::getsockopt(
             descriptor, level, option_name, &value, &length) != 0) {
-        return std::unexpected(current_socket_error());
+        return socket_option_result<int>::failure(current_socket_error());
     }
     if (length != sizeof(value)) {
-        return std::unexpected(
+        return socket_option_result<int>::failure(
             std::make_error_code(std::errc::protocol_error));
     }
-    return value;
+    return socket_option_result<int>::success(value);
 }
 
-[[nodiscard]] inline std::expected<void, std::error_code>
+[[nodiscard]] inline socket_option_result<void>
 set_integer_socket_option(int descriptor,
                           int level,
                           int option_name,
@@ -103,9 +176,9 @@ set_integer_socket_option(int descriptor,
                      option_name,
                      &value,
                      sizeof(value)) != 0) {
-        return std::unexpected(current_socket_error());
+        return socket_option_result<void>::failure(current_socket_error());
     }
-    return {};
+    return socket_option_result<void>::success();
 }
 
 [[nodiscard]] inline datagram_receive_result receive_datagram_once(
@@ -147,85 +220,88 @@ set_integer_socket_option(int descriptor,
 
 }  // namespace detail
 
-[[nodiscard]] inline std::expected<bool, std::error_code>
+[[nodiscard]] inline socket_option_result<bool>
 tcp_no_delay(int descriptor) noexcept {
     auto observed = detail::integer_socket_option(
         descriptor, IPPROTO_TCP, TCP_NODELAY);
     if (!observed) {
-        return std::unexpected(observed.error());
+        return socket_option_result<bool>::failure(observed.error());
     }
-    return *observed != 0;
+    return socket_option_result<bool>::success(*observed != 0);
 }
 
 /// Applies TCP_NODELAY and rejects a kernel readback that differs.
-[[nodiscard]] inline std::expected<bool, std::error_code>
+[[nodiscard]] inline socket_option_result<bool>
 configure_tcp_no_delay(int descriptor, bool enabled) noexcept {
     const auto requested = static_cast<int>(enabled);
     auto configured = detail::set_integer_socket_option(
         descriptor, IPPROTO_TCP, TCP_NODELAY, requested);
     if (!configured) {
-        return std::unexpected(configured.error());
+        return socket_option_result<bool>::failure(configured.error());
     }
     auto observed = tcp_no_delay(descriptor);
     if (!observed) {
-        return std::unexpected(observed.error());
+        return socket_option_result<bool>::failure(observed.error());
     }
     if (*observed != enabled) {
-        return std::unexpected(
+        return socket_option_result<bool>::failure(
             std::make_error_code(std::errc::protocol_error));
     }
-    return *observed;
+    return socket_option_result<bool>::success(*observed);
 }
 
 /// Requests Linux's transient quick-ACK mode once; rearm when policy requires.
-[[nodiscard]] inline std::expected<void, std::error_code>
+[[nodiscard]] inline socket_option_result<void>
 rearm_tcp_quick_ack(int descriptor) noexcept {
     return detail::set_integer_socket_option(
         descriptor, IPPROTO_TCP, TCP_QUICKACK, 1);
 }
 
 /// Returns the Linux SO_BUSY_POLL budget currently stored on a socket.
-[[nodiscard]] inline std::expected<std::chrono::microseconds,
-                                   std::error_code>
+[[nodiscard]] inline socket_option_result<std::chrono::microseconds>
 busy_poll_budget(int descriptor) noexcept {
     auto observed = detail::integer_socket_option(
         descriptor, SOL_SOCKET, SO_BUSY_POLL);
     if (!observed) {
-        return std::unexpected(observed.error());
+        return socket_option_result<std::chrono::microseconds>::failure(
+            observed.error());
     }
     if (*observed < 0) {
-        return std::unexpected(
+        return socket_option_result<std::chrono::microseconds>::failure(
             std::make_error_code(std::errc::protocol_error));
     }
-    return std::chrono::microseconds{*observed};
+    return socket_option_result<std::chrono::microseconds>::success(
+        std::chrono::microseconds{*observed});
 }
 
 /// Applies SO_BUSY_POLL and rejects invalid or differing kernel readback.
-[[nodiscard]] inline std::expected<std::chrono::microseconds,
-                                   std::error_code>
+[[nodiscard]] inline socket_option_result<std::chrono::microseconds>
 configure_busy_poll_budget(
     int descriptor,
     std::chrono::microseconds requested) noexcept {
     if (requested.count() < 0 ||
         requested.count() > std::numeric_limits<int>::max()) {
-        return std::unexpected(
+        return socket_option_result<std::chrono::microseconds>::failure(
             std::make_error_code(std::errc::invalid_argument));
     }
     const auto value = static_cast<int>(requested.count());
     auto configured = detail::set_integer_socket_option(
         descriptor, SOL_SOCKET, SO_BUSY_POLL, value);
     if (!configured) {
-        return std::unexpected(configured.error());
+        return socket_option_result<std::chrono::microseconds>::failure(
+            configured.error());
     }
     auto observed = busy_poll_budget(descriptor);
     if (!observed) {
-        return std::unexpected(observed.error());
+        return socket_option_result<std::chrono::microseconds>::failure(
+            observed.error());
     }
     if (*observed != requested) {
-        return std::unexpected(
+        return socket_option_result<std::chrono::microseconds>::failure(
             std::make_error_code(std::errc::protocol_error));
     }
-    return *observed;
+    return socket_option_result<std::chrono::microseconds>::success(
+        *observed);
 }
 
 /// Sends an exact stream payload, retaining progress when an error occurs.

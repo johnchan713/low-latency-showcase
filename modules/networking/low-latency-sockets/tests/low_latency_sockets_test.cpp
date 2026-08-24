@@ -190,6 +190,22 @@ template <std::size_t Size>
 }
 
 [[nodiscard]] bool socket_option_test() {
+    const auto invalid_observation = networking::tcp_no_delay(-1);
+    const auto invalid_configuration =
+        networking::configure_tcp_no_delay(-1, true);
+    const auto invalid_rearm = networking::rearm_tcp_quick_ack(-1);
+    const auto bad_descriptor =
+        std::make_error_code(std::errc::bad_file_descriptor);
+    if (!check(!invalid_observation &&
+                   invalid_observation.error() == bad_descriptor &&
+                   !invalid_configuration &&
+                   invalid_configuration.error() == bad_descriptor &&
+                   !invalid_rearm &&
+                   invalid_rearm.error() == bad_descriptor,
+               "propagate socket option descriptor failures")) {
+        return false;
+    }
+
     auto sockets = make_tcp_pair();
     if (!check(sockets.valid(), "create TCP pair for option tests")) {
         return false;
