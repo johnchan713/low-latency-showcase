@@ -574,6 +574,15 @@ template <std::size_t Size>
         return false;
     }
 
+    std::array<std::byte, 8> empty_buffer{};
+    const auto not_ready = networking::try_receive_connected_datagram(
+        sockets.second.get(), empty_buffer);
+    if (!check(not_ready.state ==
+                   networking::datagram_receive_state::not_ready,
+               "empty connected UDP fast receive reports not-ready")) {
+        return false;
+    }
+
     const int flags_before = ::fcntl(sockets.second.get(), F_GETFL, 0);
     if (!check(flags_before >= 0, "read descriptor flags before UDP spin")) {
         return false;
@@ -592,7 +601,8 @@ template <std::size_t Size>
 
     std::array<std::byte, 1400> received{};
     const auto deadline = std::chrono::steady_clock::now() + 5s;
-    const auto receive_result = networking::receive_datagram_busy_spin(
+    const auto receive_result =
+        networking::receive_connected_datagram_busy_spin(
         sockets.second.get(),
         received,
         [&] {
@@ -619,8 +629,9 @@ template <std::size_t Size>
         return false;
     }
     std::array<std::byte, 8> reply_received{};
-    const auto reply_result = networking::receive_datagram_blocking(
-        sockets.first.get(), reply_received);
+    const auto reply_result =
+        networking::receive_connected_datagram_blocking(
+            sockets.first.get(), reply_received);
     if (!check(reply_result.received() &&
                    reply_result.wire_bytes == reply.size() &&
                    equal_payload(reply, reply_received),
@@ -636,7 +647,7 @@ template <std::size_t Size>
     }
     std::array<std::byte, 8> deadline_received{};
     const auto before_deadline =
-        networking::receive_datagram_busy_spin_until(
+        networking::receive_connected_datagram_busy_spin_until(
             sockets.second.get(),
             deadline_received,
             std::chrono::steady_clock::now() + 5s);
@@ -652,9 +663,31 @@ template <std::size_t Size>
         return false;
     }
 
+    const auto oversized = make_payload<64>();
+    if (!check(networking::send_connected_datagram(
+                       sockets.first.get(), oversized)
+                   .complete(oversized.size()),
+               "send oversized connected UDP datagram")) {
+        return false;
+    }
+    std::array<std::byte, 8> truncated_buffer{};
+    const auto truncated =
+        networking::receive_connected_datagram_blocking(
+            sockets.second.get(), truncated_buffer);
+    if (!check(truncated.received() &&
+                   truncated.wire_bytes == oversized.size() &&
+                   truncated.truncated(truncated_buffer.size()) &&
+                   std::equal(truncated_buffer.begin(),
+                              truncated_buffer.end(),
+                              oversized.begin()),
+               "preserve connected UDP wire length on truncation")) {
+        return false;
+    }
+
     std::array<std::byte, 8> silent_buffer{};
     std::size_t polls{};
-    const auto stopped = networking::receive_datagram_busy_spin(
+    const auto stopped =
+        networking::receive_connected_datagram_busy_spin(
         sockets.second.get(), silent_buffer, [&polls] {
             ++polls;
             return polls >= 64U;
@@ -667,7 +700,7 @@ template <std::size_t Size>
     }
 
     const auto stopped_until =
-        networking::receive_datagram_busy_spin_until(
+        networking::receive_connected_datagram_busy_spin_until(
             sockets.second.get(),
             silent_buffer,
             std::chrono::steady_clock::now() - 1ns);
@@ -687,6 +720,8 @@ template <std::size_t Size>
         networking::receive_exact_blocking(-1, buffer);
     const auto datagram_error =
         networking::try_receive_datagram(-1, buffer);
+    const auto connected_datagram_error =
+        networking::try_receive_connected_datagram(-1, buffer);
     if (!check(send_error.error ==
                        std::make_error_code(std::errc::bad_file_descriptor) &&
                    stream_error.state ==
@@ -696,6 +731,10 @@ template <std::size_t Size>
                    datagram_error.state ==
                        networking::datagram_receive_state::error &&
                    datagram_error.error ==
+                       std::make_error_code(std::errc::bad_file_descriptor) &&
+                   connected_datagram_error.state ==
+                       networking::datagram_receive_state::error &&
+                   connected_datagram_error.error ==
                        std::make_error_code(std::errc::bad_file_descriptor),
                "return errno and progress for socket failures")) {
         return false;

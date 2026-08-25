@@ -1,0 +1,5 @@
+profile,payload_bytes,observations,p50_wins_vs_reference,min_run_p50_ns,median_p50_ns,max_run_p50_ns,median_p50_ratio_vs_reference,geomean_p50_ratio_vs_reference,median_p99_ns,median_p99_ratio_vs_reference,median_p999_ns,median_p999_ratio_vs_reference,median_validated_round_trips_per_second,median_process_cpu_percent,median_combined_thread_cpu_ns_per_attempt,total_udp_deadline_misses,total_cgroup_throttled_periods,total_cgroup_throttled_usec,validation
+tcp-spin,64,16,,3165,3330,6129,1,1,5778.500000,1,79102.500000,1,245645.130000,199.286000,8143.702000,0,0,0,PASS
+tcp-spin-pause4,64,16,9,3174,3230,6289,0.999688,0.993571,5147.500000,1.006025,76884,0.991944,259646.743000,199.050000,7709.379500,0,0,0,PASS
+tcp-spin-unpaused,64,16,10,3185,3215,6059,0.990557,0.884658,5328,0.958165,76038,1.114845,270543.908000,198.884000,7392.272000,0,0,0,PASS
+tcp-quickack-spin,64,16,1,3895,4041,7311,1.224958,1.236322,9969.500000,1.425193,98290.500000,1.391085,145394.430500,199.821500,13876.570500,0,0,0,PASS

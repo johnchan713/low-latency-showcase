@@ -19,7 +19,7 @@ The measured lowest-p50 profiles were:
 
 - TCP: persistent sockets with a `MSG_DONTWAIT` receive loop and x86 `PAUSE`;
 - UDP: sockets connected with POSIX `connect()`, followed by connected send and
-  a `MSG_DONTWAIT` receive loop with x86 `PAUSE`.
+  a `MSG_DONTWAIT | MSG_TRUNC` `recv()` loop with x86 `PAUSE`.
 
 In the audited benchmark implementation, TCP busy spin reduced median p50 RTT
 by 71.9-75.8% across 8-1,400-byte payloads. Connected UDP busy spin reduced it
@@ -34,6 +34,13 @@ and `SO_BUSY_POLL=50` was neutral on loopback. They remain explicit opt-in
 helpers because another workload or a physical NIC can behave differently.
 `TCP_QUICKACK` is exposed as a rearm operation rather than a permanent mode.
 
+A 2026-08-25 follow-up measured 2.24-2.46 microseconds median p50 RTT and
+3.11-3.48 microseconds median p99 RTT for connected UDP across 8-1,400-byte
+loopback payloads. Using `recv(MSG_TRUNC)` reduced paired p50 by 1.23-4.97% and
+paired p99 by 0.85-4.04% versus the prior connected `recvmsg` profile. The
+selected run had zero message anomalies or deadline misses, although p99.9 did
+not improve at every payload. See the [follow-up evidence](../../../benchmarks/scenarios/socket-latency/tuning-20260825/README.md).
+
 ## API and behaviour
 
 | Operation | Behaviour |
@@ -43,6 +50,9 @@ helpers because another workload or a physical NIC can behave differently.
 | `receive_exact_busy_spin` | Per-call nonblocking stream receive using `MSG_DONTWAIT` and `PAUSE`. |
 | `send_connected_datagram` | One possibly blocking datagram send through a socket previously connected with `connect()`. |
 | `send_datagram_to` | One possibly blocking datagram send to an explicit IPv4 peer. |
+| `receive_connected_datagram_blocking` | Connected UDP `recv`; preserves original wire length without peer metadata. |
+| `try_receive_connected_datagram` | One nonblocking connected UDP `recv`; returns `not_ready` for `EAGAIN`. |
+| `receive_connected_datagram_busy_spin` | Repeats connected UDP `recv` with `PAUSE` until data or caller stop. |
 | `receive_datagram_blocking` | Blocking `recvmsg`; preserves peer, flags, and original wire length. |
 | `try_receive_datagram` | One nonblocking `recvmsg`; returns `not_ready` for `EAGAIN`. |
 | `receive_datagram_busy_spin` | Repeats the nonblocking receive with `PAUSE` until data or caller stop. |
@@ -76,9 +86,16 @@ keep that policy out of the timed receive path:
 ```cpp
 // POSIX connect(udp_fd, peer, peer_length) is performed during setup.
 const auto sent = lls::networking::send_connected_datagram(udp_fd, request);
-const auto received = lls::networking::receive_datagram_busy_spin_until(
+const auto received =
+    lls::networking::receive_connected_datagram_busy_spin_until(
     udp_fd, response, deadline);
 ```
+
+Use the `receive_datagram_*` family instead when the source address or returned
+message flags are required. Connected `recv()` is the smaller fast path because
+the kernel has already restricted input to the configured peer. It still uses
+Linux `MSG_TRUNC`, so `wire_bytes` reports the original datagram length even
+when the supplied buffer is smaller.
 
 ## Failure, blocking, and backpressure
 
@@ -110,13 +127,13 @@ means an explicit configuration request when passed to an apply helper.
 
 ## Evidence boundary
 
-The tracked 2026-08-24 CSVs identify the exact benchmark source that produced
-them. This reusable capsule was added afterward, so the benchmark remains an
-unchanged audited snapshot rather than being refactored to call this header.
-The module's semantics are covered by loopback regression tests, but its
-performance must be remeasured after a production integration or any benchmark
-switch-over. Historical benchmark numbers are not silently attributed to a
-new binary.
+The tracked benchmark CSVs identify the exact benchmark source that produced
+them. The benchmark keeps its own auditable implementation rather than calling
+this subsequently extracted header. The module's equivalent connected receive
+semantics are covered by loopback regression tests, including exact payload,
+deadline, stop, descriptor-mode, error, and truncation behavior. Performance
+must still be remeasured after a production integration or benchmark
+switch-over; benchmark numbers are not silently attributed to this header.
 
 ## Integration
 

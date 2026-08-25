@@ -22,23 +22,45 @@ PREFIX_COLUMNS = (
 )
 
 PROFILE_EXPECTATIONS = {
-    "baseline": (("tcp", "udp"), False, False, False, 0),
-    "tcp-nodelay": (("tcp",), False, True, False, 0),
-    "tcp-spin": (("tcp",), True, False, False, 0),
-    "tcp-nodelay-spin": (("tcp",), True, True, False, 0),
-    "tcp-quickack": (("tcp",), False, False, False, 0),
-    "tcp-nodelay-quickack": (("tcp",), False, True, False, 0),
-    "tcp-nodelay-quickack-spin": (("tcp",), True, True, False, 0),
-    "udp-connected": (("udp",), False, False, True, 0),
-    "udp-spin": (("udp",), True, False, False, 0),
-    "udp-connected-spin": (("udp",), True, False, True, 0),
-    "busy-poll-50": (("tcp", "udp"), False, False, False, 50),
-    "tcp-nodelay-busy-poll-50": (("tcp",), False, True, False, 50),
-    "udp-connected-busy-poll-50": (("udp",), False, False, True, 50),
+    # protocols, spin, nodelay, connected, busy-poll, pause interval,
+    # UDP control-check interval, UDP receive API
+    "baseline": (("tcp", "udp"), False, False, False, 0, 0, 0, "recvmsg"),
+    "tcp-nodelay": (("tcp",), False, True, False, 0, 0, 0, "recvmsg"),
+    "tcp-spin": (("tcp",), True, False, False, 0, 1, 0, "recvmsg"),
+    "tcp-spin-pause4": (("tcp",), True, False, False, 0, 4, 0, "recvmsg"),
+    "tcp-spin-unpaused": (("tcp",), True, False, False, 0, 0, 0, "recvmsg"),
+    "tcp-nodelay-spin": (("tcp",), True, True, False, 0, 1, 0, "recvmsg"),
+    "tcp-quickack": (("tcp",), False, False, False, 0, 0, 0, "recvmsg"),
+    "tcp-quickack-spin": (("tcp",), True, False, False, 0, 1, 0, "recvmsg"),
+    "tcp-nodelay-quickack": (("tcp",), False, True, False, 0, 0, 0, "recvmsg"),
+    "tcp-nodelay-quickack-spin": (("tcp",), True, True, False, 0, 1, 0, "recvmsg"),
+    "udp-connected": (("udp",), False, False, True, 0, 0, 0, "recvmsg"),
+    "udp-spin": (("udp",), True, False, False, 0, 1, 1, "recvmsg"),
+    "udp-connected-spin": (("udp",), True, False, True, 0, 1, 1, "recvmsg"),
+    "udp-connected-spin-pause4": (("udp",), True, False, True, 0, 4, 1, "recvmsg"),
+    "udp-connected-spin-unpaused": (("udp",), True, False, True, 0, 0, 1, "recvmsg"),
+    "udp-connected-recv-spin": (("udp",), True, False, True, 0, 1, 1, "recv"),
+    "udp-connected-peerless-recvmsg-spin": (
+        ("udp",), True, False, True, 0, 1, 1, "recvmsg-no-peer"
+    ),
+    "udp-connected-peerless-recvmsg-spin-pause4": (
+        ("udp",), True, False, True, 0, 4, 1, "recvmsg-no-peer"
+    ),
+    "udp-connected-peerless-recvmsg-spin-unpaused": (
+        ("udp",), True, False, True, 0, 0, 1, "recvmsg-no-peer"
+    ),
+    "udp-connected-recv-spin-pause4": (("udp",), True, False, True, 0, 4, 1, "recv"),
+    "udp-connected-recv-spin-unpaused": (("udp",), True, False, True, 0, 0, 1, "recv"),
+    "udp-connected-spin-check64": (("udp",), True, False, True, 0, 1, 64, "recvmsg"),
+    "udp-connected-recv-spin-check64": (("udp",), True, False, True, 0, 1, 64, "recv"),
+    "busy-poll-50": (("tcp", "udp"), False, False, False, 50, 0, 0, "recvmsg"),
+    "tcp-nodelay-busy-poll-50": (("tcp",), False, True, False, 50, 0, 0, "recvmsg"),
+    "udp-connected-busy-poll-50": (("udp",), False, False, True, 50, 0, 0, "recvmsg"),
 }
 
 QUICKACK_PROFILES = {
     "tcp-quickack",
+    "tcp-quickack-spin",
     "tcp-nodelay-quickack",
     "tcp-nodelay-quickack-spin",
 }
@@ -60,6 +82,7 @@ def parse_args():
     parser.add_argument("--protocol", required=True, choices=("tcp", "udp"))
     parser.add_argument("--payloads", required=True, nargs="+", type=int)
     parser.add_argument("--profiles", required=True, nargs="+")
+    parser.add_argument("--reference-profile", default="baseline")
     parser.add_argument("--observations", type=positive_integer)
     parser.add_argument("--warmup", type=positive_integer, default=10_000)
     parser.add_argument("--samples", type=positive_integer, default=50_000)
@@ -70,8 +93,8 @@ def parse_args():
     arguments = parser.parse_args()
     if len(set(arguments.profiles)) != len(arguments.profiles):
         parser.error("profiles must be unique")
-    if "baseline" not in arguments.profiles:
-        parser.error("profiles must include baseline")
+    if arguments.reference_profile not in arguments.profiles:
+        parser.error("profiles must include --reference-profile")
     unknown_profiles = sorted(
         set(arguments.profiles) - set(PROFILE_EXPECTATIONS)
     )
@@ -163,6 +186,9 @@ def validate_row(row, profile, protocol, payload, samples, warmup, deadline):
         "protocol",
         "receive_wait",
         "udp_connected",
+        "spin_pause_interval",
+        "udp_spin_control_check_interval",
+        "udp_receive_api",
         "tcp_nodelay_requested",
         "tcp_quickack_rearm",
         "busy_poll_requested_us",
@@ -250,14 +276,28 @@ def validate_row(row, profile, protocol, payload, samples, warmup, deadline):
     if protocol == "tcp" and deadline_misses != 0:
         raise ValueError("TCP profile did not complete every exchange")
 
-    _, spin, expected_nodelay, expected_connected, expected_busy_poll = (
-        PROFILE_EXPECTATIONS[profile]
-    )
+    (
+        _,
+        spin,
+        expected_nodelay,
+        expected_connected,
+        expected_busy_poll,
+        expected_pause_interval,
+        expected_control_interval,
+        expected_udp_receive_api,
+    ) = PROFILE_EXPECTATIONS[profile]
     expected_profile_fields = {
         "receive_wait": "spin" if spin else (
             "blocking" if protocol == "tcp" else "poll"
         ),
         "udp_connected": str(int(expected_connected)),
+        "spin_pause_interval": str(expected_pause_interval),
+        "udp_spin_control_check_interval": str(
+            expected_control_interval if protocol == "udp" else 0
+        ),
+        "udp_receive_api": (
+            expected_udp_receive_api if protocol == "udp" else "none"
+        ),
         "tcp_nodelay_requested": str(int(expected_nodelay)),
         "tcp_quickack_rearm": str(int(profile in QUICKACK_PROFILES)),
         "busy_poll_requested_us": str(expected_busy_poll),
@@ -470,7 +510,7 @@ def format_number(value):
     return f"{value:.6f}"
 
 
-def write_summary(path, rows, profile_order, payloads):
+def write_summary(path, rows, profile_order, payloads, reference_profile):
     by_group = defaultdict(list)
     by_macro = {}
     for row in rows:
@@ -486,16 +526,16 @@ def write_summary(path, rows, profile_order, payloads):
         "profile",
         "payload_bytes",
         "observations",
-        "p50_wins_vs_baseline",
+        "p50_wins_vs_reference",
         "min_run_p50_ns",
         "median_p50_ns",
         "max_run_p50_ns",
-        "median_p50_ratio_vs_baseline",
-        "geomean_p50_ratio_vs_baseline",
+        "median_p50_ratio_vs_reference",
+        "geomean_p50_ratio_vs_reference",
         "median_p99_ns",
-        "median_p99_ratio_vs_baseline",
+        "median_p99_ratio_vs_reference",
         "median_p999_ns",
-        "median_p999_ratio_vs_baseline",
+        "median_p999_ratio_vs_reference",
         "median_validated_round_trips_per_second",
         "median_process_cpu_percent",
         "median_combined_thread_cpu_ns_per_attempt",
@@ -510,20 +550,22 @@ def write_summary(path, rows, profile_order, payloads):
         for payload in payloads:
             for profile in profile_order:
                 group = by_group[(profile, payload)]
-                baseline_by_run = {
-                    macro_run: by_macro[(macro_run, "baseline", payload)]
+                reference_by_run = {
+                    macro_run: by_macro[
+                        (macro_run, reference_profile, payload)
+                    ]
                     for macro_run in range(1, len(group) + 1)
                 }
                 ratios = defaultdict(list)
                 wins = 0
                 for row in group:
                     macro_run = int(row["macro_run"])
-                    baseline = baseline_by_run[macro_run]
+                    reference = reference_by_run[macro_run]
                     for column in ("p50_ns", "p99_ns", "p999_ns"):
                         ratios[column].append(
-                            float(row[column]) / float(baseline[column])
+                            float(row[column]) / float(reference[column])
                         )
-                    if float(row["p50_ns"]) < float(baseline["p50_ns"]):
+                    if float(row["p50_ns"]) < float(reference["p50_ns"]):
                         wins += 1
                 combined_cpu = [
                     float(row["client_cpu_ns_per_attempt"])
@@ -535,7 +577,7 @@ def write_summary(path, rows, profile_order, payloads):
                     profile,
                     payload,
                     len(group),
-                    "" if profile == "baseline" else wins,
+                    "" if profile == reference_profile else wins,
                     min(p50_values),
                     statistics.median(p50_values),
                     max(p50_values),
@@ -632,7 +674,11 @@ def main():
         writer.writerows(raw_rows)
 
     write_summary(
-        summary_path, raw_rows, arguments.profiles, arguments.payloads
+        summary_path,
+        raw_rows,
+        arguments.profiles,
+        arguments.payloads,
+        arguments.reference_profile,
     )
     manifest = {
         "started_utc": started,
@@ -646,6 +692,7 @@ def main():
         "protocol": arguments.protocol,
         "payloads": arguments.payloads,
         "profiles": arguments.profiles,
+        "reference_profile": arguments.reference_profile,
         "observations": arguments.observations,
         "warmup": arguments.warmup,
         "samples": arguments.samples,

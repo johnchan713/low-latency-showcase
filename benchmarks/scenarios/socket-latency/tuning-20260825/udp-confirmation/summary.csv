@@ -1,0 +1,9 @@
+profile,payload_bytes,observations,p50_wins_vs_reference,min_run_p50_ns,median_p50_ns,max_run_p50_ns,median_p50_ratio_vs_reference,geomean_p50_ratio_vs_reference,median_p99_ns,median_p99_ratio_vs_reference,median_p999_ns,median_p999_ratio_vs_reference,median_validated_round_trips_per_second,median_process_cpu_percent,median_combined_thread_cpu_ns_per_attempt,total_udp_deadline_misses,total_cgroup_throttled_periods,total_cgroup_throttled_usec,validation
+udp-connected-spin,8,32,,2223,2323.500000,5138,1,1,3130,1,48386.500000,1,383030.461500,198.593000,5221.436500,0,0,0,PASS
+udp-connected-recv-spin,8,32,24,2183,2244,5308,0.977793,0.955499,3135,0.959555,47174.500000,0.963955,386710.660500,198.520000,5170.886000,0,0,0,PASS
+udp-connected-spin,64,32,,2203,2354,5208,1,1,3350,1,53775,1,375650.079000,198.467000,5325.625500,0,0,0,PASS
+udp-connected-recv-spin,64,32,22,2163,2253,5438,0.966072,0.998484,3145,0.991479,56203.500000,1.005301,381141.993500,198.751500,5248.463500,0,0,0,PASS
+udp-connected-spin,256,32,,2284,2413,5368,1,1,3350,1,53304.500000,1,342294.853500,199.220500,5826.639000,0,0,0,PASS
+udp-connected-recv-spin,256,32,26,2223,2303,5638,0.950289,0.979644,3104.500000,0.962871,52102,0.966034,370268.897000,198.896500,5400.933000,0,0,0,PASS
+udp-connected-spin,1400,32,,2444,2503,5779,1,1,3791,1,51771.500000,1,255062.321500,199.446000,7841.448000,0,0,0,PASS
+udp-connected-recv-spin,1400,32,24,2373,2463,6069,0.987746,0.989380,3480.500000,0.967172,59558.500000,1.134899,269547.034000,199.571000,7418.895500,0,0,0,PASS

@@ -16,7 +16,7 @@ C++-versus-Java ranking.
 
 [Disruptor implementation and benchmark evidence](benchmarks/comparisons/disruptor/README.md)
 
-### 2. Low-latency sockets — p50 RTT as low as 3.25 µs
+### 2. Low-latency sockets — p50 RTT as low as 2.24 µs
 
 The audited Linux IPv4 loopback benchmark selected receive busy-spin for TCP
 and connected UDP with receive busy-spin for UDP:
@@ -37,6 +37,14 @@ These are local-kernel loopback figures, not physical-NIC, one-way, or
 two-machine latency. The reusable capsule exposes the selected paths, while the
 figures remain attributed to the audited benchmark implementation that selected
 them.
+
+The latest AMD EPYC/KVM follow-up reached **2.24-2.46 µs median p50 RTT** and
+**3.11-3.48 µs median p99 RTT** across 8-1,400-byte UDP messages. The new fast
+path uses connected `recv(MSG_TRUNC)` without requesting peer-address output;
+against the prior same-host connected `recvmsg` path, it reduced paired p50 by
+**1.23-4.97%** and paired p99 by **0.85-4.04%**. All 6.4 million selected-profile
+attempts passed. p99.9 did not improve at every payload, so the result remains
+a measured fast path rather than a universal latency guarantee.
 
 [Socket benchmark evidence](benchmarks/scenarios/socket-latency/README.md) ·
 [Reusable low-latency socket capsule](modules/networking/low-latency-sockets/)

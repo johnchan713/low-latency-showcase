@@ -51,6 +51,18 @@ enum class protocol : std::uint8_t { tcp = 1, udp = 2 };
 
 enum class wait_strategy : std::uint8_t { kernel, spin };
 
+enum class spin_relaxation : std::uint8_t {
+    pause_every_miss,
+    pause_every_four_misses,
+    unpaused,
+};
+
+enum class udp_receive_api : std::uint8_t {
+    recvmsg,
+    connected_recvmsg,
+    connected_recv,
+};
+
 struct profile_spec final {
     std::string_view name;
     bool supports_tcp;
@@ -60,35 +72,106 @@ struct profile_spec final {
     bool tcp_quickack_rearm;
     bool udp_connected;
     int busy_poll_us;
+    spin_relaxation relaxation;
+    udp_receive_api udp_receive;
+    std::size_t spin_control_check_interval{1};
 };
 
 constexpr std::array profiles{
     profile_spec{"baseline", true, true, wait_strategy::kernel, false,
-                 false, false, 0},
+                 false, false, 0, spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"tcp-nodelay", true, false, wait_strategy::kernel, true,
-                 false, false, 0},
+                 false, false, 0, spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"tcp-spin", true, false, wait_strategy::spin, false,
-                 false, false, 0},
+                 false, false, 0, spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
+    profile_spec{"tcp-spin-pause4", true, false, wait_strategy::spin, false,
+                 false, false, 0,
+                 spin_relaxation::pause_every_four_misses,
+                 udp_receive_api::recvmsg},
+    profile_spec{"tcp-spin-unpaused", true, false, wait_strategy::spin,
+                 false, false, false, 0, spin_relaxation::unpaused,
+                 udp_receive_api::recvmsg},
     profile_spec{"tcp-nodelay-spin", true, false, wait_strategy::spin, true,
-                 false, false, 0},
+                 false, false, 0, spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"tcp-quickack", true, false, wait_strategy::kernel, false,
-                 true, false, 0},
+                 true, false, 0, spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
+    profile_spec{"tcp-quickack-spin", true, false, wait_strategy::spin,
+                 false, true, false, 0,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"tcp-nodelay-quickack", true, false,
-                 wait_strategy::kernel, true, true, false, 0},
+                 wait_strategy::kernel, true, true, false, 0,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"tcp-nodelay-quickack-spin", true, false,
-                 wait_strategy::spin, true, true, false, 0},
+                 wait_strategy::spin, true, true, false, 0,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"udp-connected", false, true, wait_strategy::kernel, false,
-                 false, true, 0},
+                 false, true, 0, spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"udp-spin", false, true, wait_strategy::spin, false, false,
-                 false, 0},
+                 false, 0, spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"udp-connected-spin", false, true, wait_strategy::spin,
-                 false, false, true, 0},
+                 false, false, true, 0,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
+    profile_spec{"udp-connected-spin-pause4", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::pause_every_four_misses,
+                 udp_receive_api::recvmsg},
+    profile_spec{"udp-connected-spin-unpaused", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::unpaused, udp_receive_api::recvmsg},
+    profile_spec{"udp-connected-recv-spin", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::connected_recv},
+    profile_spec{"udp-connected-peerless-recvmsg-spin", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::connected_recvmsg},
+    profile_spec{"udp-connected-peerless-recvmsg-spin-pause4", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::pause_every_four_misses,
+                 udp_receive_api::connected_recvmsg},
+    profile_spec{"udp-connected-peerless-recvmsg-spin-unpaused", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::unpaused,
+                 udp_receive_api::connected_recvmsg},
+    profile_spec{"udp-connected-recv-spin-pause4", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::pause_every_four_misses,
+                 udp_receive_api::connected_recv},
+    profile_spec{"udp-connected-recv-spin-unpaused", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::unpaused,
+                 udp_receive_api::connected_recv},
+    profile_spec{"udp-connected-spin-check64", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg, 64},
+    profile_spec{"udp-connected-recv-spin-check64", false, true,
+                 wait_strategy::spin, false, false, true, 0,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::connected_recv, 64},
     profile_spec{"busy-poll-50", true, true, wait_strategy::kernel, false,
-                 false, false, 50},
+                 false, false, 50, spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"tcp-nodelay-busy-poll-50", true, false,
-                 wait_strategy::kernel, true, false, false, 50},
+                 wait_strategy::kernel, true, false, false, 50,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
     profile_spec{"udp-connected-busy-poll-50", false, true,
-                 wait_strategy::kernel, false, false, true, 50},
+                 wait_strategy::kernel, false, false, true, 50,
+                 spin_relaxation::pause_every_miss,
+                 udp_receive_api::recvmsg},
 };
 
 struct options final {
@@ -322,26 +405,45 @@ void send_all(int descriptor, std::span<const std::byte> bytes) {
     }
 }
 
-void receive_all(int descriptor,
-                 std::span<std::byte> bytes,
-                 wait_strategy strategy,
-                 std::uint64_t spin_deadline_ns =
-                     std::numeric_limits<std::uint64_t>::max()) {
+template <spin_relaxation Relaxation>
+class socket_spin_wait final {
+public:
+    void wait() noexcept {
+        if constexpr (Relaxation == spin_relaxation::unpaused) {
+            return;
+        }
+        if constexpr (
+            Relaxation == spin_relaxation::pause_every_four_misses) {
+            ++misses_;
+            if ((misses_ & 3U) != 0U) {
+                return;
+            }
+        }
+        pause_.wait();
+    }
+
+private:
+    std::size_t misses_{};
+    lls::concurrency::busy_spin_wait pause_{};
+};
+
+template <spin_relaxation Relaxation>
+void receive_all_spinning(int descriptor,
+                          std::span<std::byte> bytes,
+                          std::uint64_t spin_deadline_ns) {
     std::size_t offset = 0;
     std::size_t spins_until_deadline_check = spin_deadline_check_interval;
-    lls::concurrency::busy_spin_wait spin_wait;
+    socket_spin_wait<Relaxation> spin_wait;
     while (offset < bytes.size()) {
-        const auto flags =
-            strategy == wait_strategy::spin ? MSG_DONTWAIT : 0;
         const auto received = ::recv(descriptor,
                                      bytes.data() + offset,
                                      bytes.size() - offset,
-                                     flags);
+                                     MSG_DONTWAIT);
         if (received > 0) {
             offset += static_cast<std::size_t>(received);
         } else if (received < 0 && errno == EINTR) {
             continue;
-        } else if (received < 0 && strategy == wait_strategy::spin &&
+        } else if (received < 0 &&
                    (errno == EAGAIN || errno == EWOULDBLOCK)) {
             if (spin_deadline_ns !=
                     std::numeric_limits<std::uint64_t>::max() &&
@@ -354,6 +456,49 @@ void receive_all(int descriptor,
                 spins_until_deadline_check = spin_deadline_check_interval;
             }
             spin_wait.wait();
+        } else if (received == 0) {
+            throw std::runtime_error("peer closed a partial message");
+        } else {
+            throw_errno("recv");
+        }
+    }
+}
+
+void receive_all(int descriptor,
+                 std::span<std::byte> bytes,
+                 wait_strategy strategy,
+                 spin_relaxation relaxation,
+                 std::uint64_t spin_deadline_ns =
+                     std::numeric_limits<std::uint64_t>::max()) {
+    if (strategy == wait_strategy::spin) {
+        switch (relaxation) {
+        case spin_relaxation::pause_every_miss:
+            receive_all_spinning<spin_relaxation::pause_every_miss>(
+                descriptor, bytes, spin_deadline_ns);
+            return;
+        case spin_relaxation::pause_every_four_misses:
+            receive_all_spinning<
+                spin_relaxation::pause_every_four_misses>(
+                descriptor, bytes, spin_deadline_ns);
+            return;
+        case spin_relaxation::unpaused:
+            receive_all_spinning<spin_relaxation::unpaused>(
+                descriptor, bytes, spin_deadline_ns);
+            return;
+        }
+        throw std::logic_error("unknown spin relaxation");
+    }
+
+    std::size_t offset = 0;
+    while (offset < bytes.size()) {
+        const auto received = ::recv(descriptor,
+                                     bytes.data() + offset,
+                                     bytes.size() - offset,
+                                     0);
+        if (received > 0) {
+            offset += static_cast<std::size_t>(received);
+        } else if (received < 0 && errno == EINTR) {
+            continue;
         } else if (received == 0) {
             throw std::runtime_error("peer closed a partial message");
         } else {
@@ -449,6 +594,112 @@ struct received_datagram final {
     return result;
 }
 
+[[nodiscard]] received_datagram receive_connected_datagram_message(
+    int descriptor,
+    std::span<std::byte> buffer) {
+    received_datagram result{};
+    iovec vector{buffer.data(), buffer.size()};
+    msghdr message{};
+    message.msg_iov = &vector;
+    message.msg_iovlen = 1;
+    do {
+        result.bytes = ::recvmsg(descriptor, &message, MSG_TRUNC);
+    } while (result.bytes < 0 && errno == EINTR);
+    if (result.bytes < 0) {
+        throw_errno("recvmsg connected datagram");
+    }
+    result.flags = message.msg_flags;
+    return result;
+}
+
+[[nodiscard]] std::optional<received_datagram>
+try_receive_connected_datagram_message(
+    int descriptor,
+    std::span<std::byte> buffer) {
+    received_datagram result{};
+    iovec vector{buffer.data(), buffer.size()};
+    msghdr message{};
+    message.msg_iov = &vector;
+    message.msg_iovlen = 1;
+    do {
+        result.bytes =
+            ::recvmsg(descriptor, &message, MSG_TRUNC | MSG_DONTWAIT);
+    } while (result.bytes < 0 && errno == EINTR);
+    if (result.bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        return std::nullopt;
+    }
+    if (result.bytes < 0) {
+        throw_errno("recvmsg connected datagram");
+    }
+    result.flags = message.msg_flags;
+    return result;
+}
+
+[[nodiscard]] received_datagram receive_connected_datagram(
+    int descriptor,
+    std::span<std::byte> buffer) {
+    received_datagram result{};
+    do {
+        result.bytes = ::recv(
+            descriptor, buffer.data(), buffer.size(), MSG_TRUNC);
+    } while (result.bytes < 0 && errno == EINTR);
+    if (result.bytes < 0) {
+        throw_errno("recv connected datagram");
+    }
+    if (result.bytes > static_cast<ssize_t>(buffer.size())) {
+        result.flags = MSG_TRUNC;
+    }
+    return result;
+}
+
+[[nodiscard]] std::optional<received_datagram>
+try_receive_connected_datagram(int descriptor,
+                               std::span<std::byte> buffer) {
+    received_datagram result{};
+    do {
+        result.bytes = ::recv(descriptor,
+                              buffer.data(),
+                              buffer.size(),
+                              MSG_TRUNC | MSG_DONTWAIT);
+    } while (result.bytes < 0 && errno == EINTR);
+    if (result.bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        return std::nullopt;
+    }
+    if (result.bytes < 0) {
+        throw_errno("recv connected datagram");
+    }
+    if (result.bytes > static_cast<ssize_t>(buffer.size())) {
+        result.flags = MSG_TRUNC;
+    }
+    return result;
+}
+
+template <udp_receive_api ReceiveApi>
+[[nodiscard]] received_datagram receive_profile_datagram(
+    int descriptor,
+    std::span<std::byte> buffer) {
+    if constexpr (ReceiveApi == udp_receive_api::connected_recv) {
+        return receive_connected_datagram(descriptor, buffer);
+    }
+    if constexpr (ReceiveApi == udp_receive_api::connected_recvmsg) {
+        return receive_connected_datagram_message(descriptor, buffer);
+    }
+    return receive_datagram(descriptor, buffer);
+}
+
+template <udp_receive_api ReceiveApi>
+[[nodiscard]] std::optional<received_datagram>
+try_receive_profile_datagram(int descriptor,
+                             std::span<std::byte> buffer) {
+    if constexpr (ReceiveApi == udp_receive_api::connected_recv) {
+        return try_receive_connected_datagram(descriptor, buffer);
+    }
+    if constexpr (ReceiveApi == udp_receive_api::connected_recvmsg) {
+        return try_receive_connected_datagram_message(descriptor, buffer);
+    }
+    return try_receive_datagram(descriptor, buffer);
+}
+
 [[nodiscard]] bool wait_readable_until(int descriptor,
                                        std::uint64_t deadline_ns) {
     while (true) {
@@ -499,52 +750,190 @@ struct received_datagram final {
     return false;
 }
 
+template <udp_receive_api ReceiveApi, spin_relaxation Relaxation>
+[[nodiscard]] std::optional<received_datagram>
+receive_udp_until_spinning(
+    int descriptor,
+    std::span<std::byte> buffer,
+    std::uint64_t deadline_ns,
+    std::size_t control_check_interval) {
+    if (clock_nanoseconds(CLOCK_MONOTONIC_RAW) >= deadline_ns) {
+        return std::nullopt;
+    }
+    std::size_t misses_until_control_check = control_check_interval;
+    socket_spin_wait<Relaxation> spin_wait;
+    while (true) {
+        auto datagram =
+            try_receive_profile_datagram<ReceiveApi>(descriptor, buffer);
+        if (datagram) {
+            return datagram;
+        }
+        --misses_until_control_check;
+        if (misses_until_control_check == 0) {
+            if (clock_nanoseconds(CLOCK_MONOTONIC_RAW) >= deadline_ns) {
+                return std::nullopt;
+            }
+            misses_until_control_check = control_check_interval;
+        }
+        spin_wait.wait();
+    }
+}
+
+template <udp_receive_api ReceiveApi>
+[[nodiscard]] std::optional<received_datagram>
+receive_udp_until_with_api(int descriptor,
+                           std::span<std::byte> buffer,
+                           std::uint64_t deadline_ns,
+                           const profile_spec& profile) {
+    switch (profile.relaxation) {
+    case spin_relaxation::pause_every_miss:
+        return receive_udp_until_spinning<
+            ReceiveApi, spin_relaxation::pause_every_miss>(
+            descriptor,
+            buffer,
+            deadline_ns,
+            profile.spin_control_check_interval);
+    case spin_relaxation::pause_every_four_misses:
+        return receive_udp_until_spinning<
+            ReceiveApi, spin_relaxation::pause_every_four_misses>(
+            descriptor,
+            buffer,
+            deadline_ns,
+            profile.spin_control_check_interval);
+    case spin_relaxation::unpaused:
+        return receive_udp_until_spinning<
+            ReceiveApi, spin_relaxation::unpaused>(
+            descriptor,
+            buffer,
+            deadline_ns,
+            profile.spin_control_check_interval);
+    }
+    throw std::logic_error("unknown spin relaxation");
+}
+
 [[nodiscard]] std::optional<received_datagram> receive_udp_until(
     int descriptor,
     std::span<std::byte> buffer,
     std::uint64_t deadline_ns,
-    wait_strategy strategy) {
-    if (strategy == wait_strategy::kernel) {
+    const profile_spec& profile) {
+    if (profile.receive_wait == wait_strategy::kernel) {
         if (!wait_readable_until(descriptor, deadline_ns)) {
             return std::nullopt;
         }
+        if (profile.udp_receive == udp_receive_api::connected_recv) {
+            return receive_connected_datagram(descriptor, buffer);
+        }
+        if (profile.udp_receive == udp_receive_api::connected_recvmsg) {
+            return receive_connected_datagram_message(descriptor, buffer);
+        }
         return receive_datagram(descriptor, buffer);
     }
+    if (profile.udp_receive == udp_receive_api::connected_recv) {
+        return receive_udp_until_with_api<udp_receive_api::connected_recv>(
+            descriptor, buffer, deadline_ns, profile);
+    }
+    if (profile.udp_receive == udp_receive_api::connected_recvmsg) {
+        return receive_udp_until_with_api<
+            udp_receive_api::connected_recvmsg>(
+            descriptor, buffer, deadline_ns, profile);
+    }
+    return receive_udp_until_with_api<udp_receive_api::recvmsg>(
+        descriptor, buffer, deadline_ns, profile);
+}
 
-    lls::concurrency::busy_spin_wait spin_wait;
-    while (clock_nanoseconds(CLOCK_MONOTONIC_RAW) < deadline_ns) {
-        auto datagram = try_receive_datagram(descriptor, buffer);
+template <udp_receive_api ReceiveApi, spin_relaxation Relaxation>
+[[nodiscard]] std::optional<received_datagram>
+receive_udp_server_spinning(
+    int descriptor,
+    std::span<std::byte> buffer,
+    std::size_t control_check_interval,
+    const std::atomic<bool>& cancellation_requested) {
+    if (cancellation_requested.load(std::memory_order_acquire)) {
+        return std::nullopt;
+    }
+    std::size_t misses_until_control_check = control_check_interval;
+    socket_spin_wait<Relaxation> spin_wait;
+    while (true) {
+        auto datagram =
+            try_receive_profile_datagram<ReceiveApi>(descriptor, buffer);
         if (datagram) {
             return datagram;
         }
+        --misses_until_control_check;
+        if (misses_until_control_check == 0) {
+            if (cancellation_requested.load(std::memory_order_acquire)) {
+                return std::nullopt;
+            }
+            misses_until_control_check = control_check_interval;
+        }
         spin_wait.wait();
     }
-    return std::nullopt;
+}
+
+template <udp_receive_api ReceiveApi>
+[[nodiscard]] std::optional<received_datagram>
+receive_udp_server_with_api(
+    int descriptor,
+    std::span<std::byte> buffer,
+    const profile_spec& profile,
+    const std::atomic<bool>& cancellation_requested) {
+    switch (profile.relaxation) {
+    case spin_relaxation::pause_every_miss:
+        return receive_udp_server_spinning<
+            ReceiveApi, spin_relaxation::pause_every_miss>(
+            descriptor,
+            buffer,
+            profile.spin_control_check_interval,
+            cancellation_requested);
+    case spin_relaxation::pause_every_four_misses:
+        return receive_udp_server_spinning<
+            ReceiveApi, spin_relaxation::pause_every_four_misses>(
+            descriptor,
+            buffer,
+            profile.spin_control_check_interval,
+            cancellation_requested);
+    case spin_relaxation::unpaused:
+        return receive_udp_server_spinning<
+            ReceiveApi, spin_relaxation::unpaused>(
+            descriptor,
+            buffer,
+            profile.spin_control_check_interval,
+            cancellation_requested);
+    }
+    throw std::logic_error("unknown spin relaxation");
 }
 
 [[nodiscard]] std::optional<received_datagram>
 receive_udp_server_datagram(
     int descriptor,
     std::span<std::byte> buffer,
-    wait_strategy strategy,
+    const profile_spec& profile,
     const std::atomic<bool>& cancellation_requested) {
-    if (strategy == wait_strategy::kernel) {
+    if (profile.receive_wait == wait_strategy::kernel) {
         if (!wait_for_udp_server_input(descriptor,
                                        cancellation_requested)) {
             return std::nullopt;
         }
+        if (profile.udp_receive == udp_receive_api::connected_recv) {
+            return receive_connected_datagram(descriptor, buffer);
+        }
+        if (profile.udp_receive == udp_receive_api::connected_recvmsg) {
+            return receive_connected_datagram_message(descriptor, buffer);
+        }
         return receive_datagram(descriptor, buffer);
     }
-
-    lls::concurrency::busy_spin_wait spin_wait;
-    while (!cancellation_requested.load(std::memory_order_acquire)) {
-        auto datagram = try_receive_datagram(descriptor, buffer);
-        if (datagram) {
-            return datagram;
-        }
-        spin_wait.wait();
+    if (profile.udp_receive == udp_receive_api::connected_recv) {
+        return receive_udp_server_with_api<
+            udp_receive_api::connected_recv>(
+            descriptor, buffer, profile, cancellation_requested);
     }
-    return std::nullopt;
+    if (profile.udp_receive == udp_receive_api::connected_recvmsg) {
+        return receive_udp_server_with_api<
+            udp_receive_api::connected_recvmsg>(
+            descriptor, buffer, profile, cancellation_requested);
+    }
+    return receive_udp_server_with_api<udp_receive_api::recvmsg>(
+        descriptor, buffer, profile, cancellation_requested);
 }
 
 void write_header(std::span<std::byte> bytes,
@@ -683,6 +1072,9 @@ struct run_result final {
     protocol selected_protocol{};
     std::string_view profile_name{};
     std::string_view receive_wait{};
+    std::size_t spin_pause_interval{};
+    std::size_t udp_spin_control_check_interval{};
+    std::string_view udp_receive_api_name{};
     bool udp_connected{};
     bool tcp_nodelay_requested{};
     bool tcp_quickack_rearm{};
@@ -730,6 +1122,39 @@ struct run_result final {
     std::uint64_t checksum{};
     std::size_t workload_position{};
 };
+
+[[nodiscard]] std::size_t spin_pause_interval(
+    const profile_spec& profile) noexcept {
+    if (profile.receive_wait != wait_strategy::spin) {
+        return 0;
+    }
+    switch (profile.relaxation) {
+    case spin_relaxation::pause_every_miss:
+        return 1;
+    case spin_relaxation::pause_every_four_misses:
+        return 4;
+    case spin_relaxation::unpaused:
+        return 0;
+    }
+    return 0;
+}
+
+[[nodiscard]] std::string_view udp_receive_api_name(
+    protocol selected_protocol,
+    const profile_spec& profile) noexcept {
+    if (selected_protocol != protocol::udp) {
+        return "none";
+    }
+    switch (profile.udp_receive) {
+    case udp_receive_api::recvmsg:
+        return "recvmsg";
+    case udp_receive_api::connected_recvmsg:
+        return "recvmsg-no-peer";
+    case udp_receive_api::connected_recv:
+        return "recv";
+    }
+    return "unknown";
+}
 
 [[nodiscard]] std::uint64_t percentile(
     const std::vector<std::uint64_t>& sorted,
@@ -785,6 +1210,12 @@ struct run_result final {
             : selected_protocol == protocol::tcp
                   ? std::string_view{"blocking"}
                   : std::string_view{"poll"},
+        spin_pause_interval(*configuration.profile),
+        selected_protocol == protocol::udp &&
+                configuration.profile->receive_wait == wait_strategy::spin
+            ? configuration.profile->spin_control_check_interval
+            : 0,
+        udp_receive_api_name(selected_protocol, *configuration.profile),
         configuration.profile->udp_connected,
         configuration.profile->tcp_nodelay,
         configuration.profile->tcp_quickack_rearm,
@@ -1035,7 +1466,10 @@ template <typename Exchange, typename PostExchange>
                     started = current_thread_usage();
                 }
                 receive_all(
-                    connection.get(), message, profile.receive_wait);
+                    connection.get(),
+                    message,
+                    profile.receive_wait,
+                    profile.relaxation);
                 send_all(connection.get(), message);
                 rearm_tcp_quickack(connection.get(), profile);
                 ++server.messages;
@@ -1065,6 +1499,7 @@ template <typename Exchange, typename PostExchange>
             receive_all(client.get(),
                         inbound,
                         profile.receive_wait,
+                        profile.relaxation,
                         started + tcp_spin_safety_timeout_ns);
         };
         auto post_exchange = [&client, &profile] {
@@ -1148,7 +1583,7 @@ template <typename Exchange, typename PostExchange>
                 auto received = receive_udp_server_datagram(
                     server_socket.get(),
                     message,
-                    profile.receive_wait,
+                    profile,
                     cancellation_requested);
                 if (!received) {
                     break;
@@ -1250,7 +1685,7 @@ template <typename Exchange, typename PostExchange>
             auto received = receive_udp_until(client.get(),
                                               inbound,
                                               sent_at + warmup_timeout_ns,
-                                              profile.receive_wait);
+                                              profile);
             if (!received) {
                 throw std::runtime_error("UDP warmup response timed out");
             }
@@ -1294,7 +1729,7 @@ template <typename Exchange, typename PostExchange>
                 auto received = receive_udp_until(client.get(),
                                                   inbound,
                                                   deadline,
-                                                  profile.receive_wait);
+                                                  profile);
                 if (!received) {
                     break;
                 }
@@ -1435,6 +1870,8 @@ template <typename Exchange, typename PostExchange>
 void print_header() {
     std::cout
         << "profile,protocol,receive_wait,udp_connected,"
+           "spin_pause_interval,udp_spin_control_check_interval,"
+           "udp_receive_api,"
            "tcp_nodelay_requested,tcp_quickack_rearm,"
            "busy_poll_requested_us,client_busy_poll_us,server_busy_poll_us,"
            "payload_bytes,run,workload_position,successful_samples,"
@@ -1461,6 +1898,9 @@ void print_result(const run_result& result) {
     std::cout << result.profile_name << ','
               << protocol_name(result.selected_protocol) << ','
               << result.receive_wait << ',' << result.udp_connected << ','
+              << result.spin_pause_interval << ','
+              << result.udp_spin_control_check_interval << ','
+              << result.udp_receive_api_name << ','
               << result.tcp_nodelay_requested << ','
               << result.tcp_quickack_rearm << ','
               << result.busy_poll_requested_us << ','
@@ -1620,6 +2060,17 @@ void print_result(const run_result& result) {
     }
     if (configuration.udp_timeout_ms > 60'000) {
         throw std::invalid_argument("UDP timeout cannot exceed 60000 ms");
+    }
+    if (configuration.profile->spin_control_check_interval == 0) {
+        throw std::invalid_argument(
+            "profile spin control check interval must be positive");
+    }
+    if (configuration.profile->udp_receive != udp_receive_api::recvmsg &&
+        (!configuration.profile->supports_udp ||
+         !configuration.profile->udp_connected ||
+         configuration.profile->receive_wait != wait_strategy::spin)) {
+        throw std::invalid_argument(
+            "connected recv profile requires connected UDP spin");
     }
     if (configuration.protocol_filter) {
         const auto supports_selected =
