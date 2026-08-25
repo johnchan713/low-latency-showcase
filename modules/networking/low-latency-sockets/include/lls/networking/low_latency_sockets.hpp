@@ -71,6 +71,21 @@ struct datagram_receive_result final {
     }
 };
 
+/// Terminal state of a connected-datagram receive without peer metadata.
+struct connected_datagram_receive_result final {
+    datagram_receive_state state{};
+    std::size_t wire_bytes{};
+    std::error_code error{};
+
+    [[nodiscard]] bool received() const noexcept {
+        return state == datagram_receive_state::received;
+    }
+
+    [[nodiscard]] bool truncated(std::size_t buffer_bytes) const noexcept {
+        return received() && wire_bytes > buffer_bytes;
+    }
+};
+
 /// Allocation-free value-or-error result used by socket option helpers.
 ///
 /// This deliberately exposes only the operations needed by this capsule. In
@@ -202,6 +217,36 @@ set_integer_socket_option(int descriptor,
             result.wire_bytes = static_cast<std::size_t>(received);
             result.peer_length = message.msg_namelen;
             result.message_flags = message.msg_flags;
+            return result;
+        }
+        if (errno == EINTR && retry_interrupted) {
+            continue;
+        }
+        if ((flags & MSG_DONTWAIT) != 0 &&
+            (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            result.state = datagram_receive_state::not_ready;
+            return result;
+        }
+        result.state = datagram_receive_state::error;
+        result.error = current_socket_error();
+        return result;
+    }
+}
+
+[[nodiscard]] inline connected_datagram_receive_result
+receive_connected_datagram_once(int descriptor,
+                                std::span<std::byte> buffer,
+                                int flags,
+                                bool retry_interrupted) noexcept {
+    connected_datagram_receive_result result{};
+    while (true) {
+        const auto received = ::recv(descriptor,
+                                     buffer.data(),
+                                     buffer.size(),
+                                     flags | MSG_TRUNC);
+        if (received >= 0) {
+            result.state = datagram_receive_state::received;
+            result.wire_bytes = static_cast<std::size_t>(received);
             return result;
         }
         if (errno == EINTR && retry_interrupted) {
@@ -467,6 +512,70 @@ template <typename Clock, typename Duration>
         result.error = std::make_error_code(std::errc::message_size);
     }
     return result;
+}
+
+/// Blocks for one datagram on a socket configured with POSIX connect().
+/// Linux MSG_TRUNC preserves the original wire length without peer metadata.
+[[nodiscard]] inline connected_datagram_receive_result
+receive_connected_datagram_blocking(
+    int descriptor,
+    std::span<std::byte> buffer) noexcept {
+    return detail::receive_connected_datagram_once(
+        descriptor, buffer, 0, true);
+}
+
+/// Attempts one connected-datagram receive without changing descriptor mode.
+[[nodiscard]] inline connected_datagram_receive_result
+try_receive_connected_datagram(
+    int descriptor,
+    std::span<std::byte> buffer) noexcept {
+    return detail::receive_connected_datagram_once(
+        descriptor, buffer, MSG_DONTWAIT, true);
+}
+
+/// Spins on connected recv() until one datagram or caller stop request.
+template <typename StopRequested>
+[[nodiscard]] connected_datagram_receive_result
+receive_connected_datagram_busy_spin(
+    int descriptor,
+    std::span<std::byte> buffer,
+    StopRequested&& stop_requested) {
+    lls::concurrency::busy_spin_wait spin_wait;
+    while (true) {
+        auto result = detail::receive_connected_datagram_once(
+            descriptor, buffer, MSG_DONTWAIT, false);
+        if (result.state != datagram_receive_state::not_ready) {
+            if (result.state == datagram_receive_state::error &&
+                result.error ==
+                    std::make_error_code(std::errc::interrupted)) {
+                if (static_cast<bool>(stop_requested())) {
+                    result.state = datagram_receive_state::stopped;
+                    result.error.clear();
+                    return result;
+                }
+                continue;
+            }
+            return result;
+        }
+        if (static_cast<bool>(stop_requested())) {
+            result.state = datagram_receive_state::stopped;
+            return result;
+        }
+        spin_wait.wait();
+    }
+}
+
+/// Adapts a chrono deadline to the connected-datagram stop predicate.
+template <typename Clock, typename Duration>
+[[nodiscard]] connected_datagram_receive_result
+receive_connected_datagram_busy_spin_until(
+    int descriptor,
+    std::span<std::byte> buffer,
+    std::chrono::time_point<Clock, Duration> deadline) {
+    return receive_connected_datagram_busy_spin(
+        descriptor,
+        buffer,
+        [deadline] { return Clock::now() >= deadline; });
 }
 
 /// Blocks for one datagram and preserves source, flags, and original wire size.

@@ -32,7 +32,7 @@ if(BUILD_TESTING)
         COMMAND
             lls_socket_latency_benchmark
             --self-test
-            --profile udp-connected-spin
+            --profile udp-connected-recv-spin
             --protocol udp
     )
     set_tests_properties(

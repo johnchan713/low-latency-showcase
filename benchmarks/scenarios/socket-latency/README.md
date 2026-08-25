@@ -258,6 +258,20 @@ and [`udp-profile-confirmation-summary-20260824.csv`](udp-profile-confirmation-s
 Build identity, hashes, exact commands, and environment limitations are in
 [`tuning-environment-20260824.md`](tuning-environment-20260824.md).
 
+## Follow-up receive-path tournament: 2026-08-25
+
+A second tournament tested pause cadence, amortized control checks,
+per-exchange `TCP_QUICKACK`, connected UDP `recv(MSG_TRUNC)`, and a peerless
+`recvmsg` sensitivity. TCP retained its existing profile. For UDP, connected
+`recv(MSG_TRUNC)` reduced paired p50 by 1.23-4.97% and paired p99 by
+0.85-4.04% across 8-1,400 bytes, with zero correctness anomalies or deadline
+misses in the selected 6.4-million-attempt confirmation. It did not improve
+every p99.9 result, so it is exposed as a connected-socket path rather than
+presented as a universal replacement.
+
+The candidate list, qualifications, exact environment, summaries, raw rows,
+and manifests are in [`tuning-20260825`](tuning-20260825/README.md).
+
 ## Interpretation boundary
 
 Loopback traverses application code, socket syscalls, and the local kernel
